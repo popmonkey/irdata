@@ -30,10 +30,19 @@ func (i *Irdata) cacheClose() error {
 	defer i.cask.Close()
 
 	if i.isDebug {
+		log.Printf("RunGC")
+	}
+
+	err := i.cask.RunGC()
+	if err != nil {
+		return err
+	}
+
+	if i.isDebug {
 		log.Printf("Merging cache")
 	}
 
-	err := i.cask.Merge()
+	err = i.cask.Merge()
 	if err != nil {
 		return err
 	}
