@@ -27,12 +27,6 @@ type t_authData struct {
 
 var additionalContext = []byte("irdata.auth")
 
-// ProvideCreds defines any functions that takes no parameters and
-// returns 2 byte arrays.  If this function is passed to any of the
-// SetCreds* functions the 2 arrays are assumed to be:
-// the iRacing member's username and password in that order.
-type ProvideCreds func() ([]byte, []byte)
-
 // AuthWithCredsFromFile loads the username and password from a file
 // at authFilename and encrypted with the key in keyFilename.
 func (i *Irdata) AuthWithCredsFromFile(keyFilename string, authFilename string) error {
@@ -42,8 +36,8 @@ func (i *Irdata) AuthWithCredsFromFile(keyFilename string, authFilename string) 
 }
 
 // AuthWithProvideCreds calls the provided function for the username and password
-func (i *Irdata) AuthWithProvideCreds(authSource ProvideCreds) error {
-	username, password := authSource()
+func (i *Irdata) AuthWithProvideCreds(authSource CredsProvider) error {
+	username, password := authSource.GetCreds()
 
 	var authData t_authData
 
@@ -58,8 +52,8 @@ func (i *Irdata) AuthWithProvideCreds(authSource ProvideCreds) error {
 // using the key within the keyFilename
 //
 // This function will panic out on errors
-func SaveProvidedCredsToFile(keyFilename string, authFilename string, authSource ProvideCreds) {
-	username, password := authSource()
+func SaveProvidedCredsToFile(keyFilename string, authFilename string, authSource CredsProvider) {
+	username, password := authSource.GetCreds()
 
 	var authData t_authData
 

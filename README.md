@@ -11,16 +11,9 @@ go get github.com/popmonkey/irdata
 api := irdata.New(context.Background)
 ```
 
-> [!NOTE]
-> Keyfiles must have permissions set to 0400.  The example and test keys that are checked into
-> this repository need to be adjust after cloning/pulling
-> ```sh
-> chmod 0400 example/example.key testdata/test.key
-> ```
-
 ## Authentication
 
-You can use the provided utility function to request creds from the Terminal:
+You can use the provided utility function to request creds from the terminal:
 
 ```go
 var credsProvider irdata.CredsFromTerminal
@@ -64,15 +57,19 @@ Example key file creation in Linux:
 openssl rand -base64 32 > ~/my.key && chmod 0400 ~/my.key
 ```
 
+> [!WARNING]
+> Don't check your keys into git ;)
+
 ## Accessing the /data API
 
-Once authenticated, you can can query the API by URI, for example:
+Once authenticated, you can query the API by URI, for example:
 
 ```go
 data, err := api.Get("/data/member/info")
 ```
 
-If successful, this returns a `[]byte` array containing the JSON response.
+If successful, this returns a `[]byte` array containing the JSON response.  See
+[the example](example/example.go) for some json handling logic.
 
 The API is lightly documented via the /data API itself.  Check out the
 [latest version](https://github.com/popmonkey/iracing-data-api-doc/blob/main/doc.json)
@@ -104,4 +101,31 @@ module to write to `stdout`.
 
 ```go
 api.EnableDebug()
+```
+
+## Development
+
+```sh
+git clone git@github.com:popmonkey/irdata.git
+```
+
+> [!NOTE]
+> Keyfiles must have permissions set to 0400.  The example and test keys that are checked into
+> this repository need to be adjust after cloning/pulling
+> ```sh
+> chmod 0400 example/example.key testdata/test.key
+> ```
+
+Run tests:
+
+```sh
+go test
+```
+
+Run example:
+
+```sh
+pushd example
+go run example.go
+popd
 ```

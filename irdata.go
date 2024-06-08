@@ -68,6 +68,8 @@ func Open(ctx context.Context) *Irdata {
 	}
 }
 
+// Close
+// Calling Close when done is important when using caching - this will compact the cache.
 func (i *Irdata) Close() {
 	if i.cask != nil {
 		err := i.cacheClose()
@@ -159,7 +161,7 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 // GetWithCache will first check the local cache for an unexpired result
 // and will the call Get with the uri provided.
 //
-// The ttl defines how long the results should be available.
+// The ttl defines for how long the results should be cached.
 //
 // You must call EnableCache before calling GetWithCache
 func (i *Irdata) GetWithCache(uri string, ttl time.Duration) ([]byte, error) {

@@ -35,7 +35,7 @@ func main() {
 	} else if errors.Is(err, os.ErrNotExist) {
 		fmt.Printf("%s does not exist, lets generate it\n", fnExampleCreds)
 
-		irdata.SaveProvidedCredsToFile(fnExampleKey, fnExampleCreds, credsProvider.GetCreds)
+		irdata.SaveProvidedCredsToFile(fnExampleKey, fnExampleCreds, credsProvider)
 
 		if err := i.AuthWithCredsFromFile(fnExampleKey, fnExampleCreds); err != nil {
 			log.Panic(err)
@@ -96,7 +96,8 @@ func main() {
 	fmt.Printf("\tsince:     %s\n", member.MemberSince)
 	fmt.Printf("\tlast seen: %s\n\n", member.LastLogin)
 
-	keys := make([]string, len(member.Licenses))
+	var keys []string
+
 	for k := range member.Licenses {
 		keys = append(keys, k)
 	}
