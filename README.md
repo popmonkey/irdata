@@ -24,19 +24,21 @@ api.AuthWithProvideCreds(credsProvider.GetCreds)
 You can specify the username, password yourself:
 
 ```go
-func myCreds() {
+var myCreds struct{}
+
+func (myCreds) GetCreds() {
     return []byte("prost"), []byte("senna")
 }
 
-api.AuthWithProvideCreds(myCreds)
+api.AuthWithProvidedCreds(myCreds)
 ```
 
 You can also store your credentials in a file encrypted using a keyfile:
 
 ```go
-var cp irdata.CredsFromTerminal
+var credsProvider irdata.CredsFromTerminal
 
-irdata.SaveProvideCredsToFile(keyFn, credsFn, cp.GetCreds)
+irdata.SaveProvidedCredsToFile(keyFn, credsFn, credsProvider)
 ```
 
 After you have a creds file you can load these into your session like so:
