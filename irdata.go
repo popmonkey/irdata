@@ -11,9 +11,11 @@
 package irdata
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -31,8 +33,28 @@ type Irdata struct {
 	cask       *bitcask.Bitcask
 }
 
+type Chunk struct {
+	Number   int
+	FileName string
+	Data     []byte
+}
+
 type t_s3link struct {
 	Link string
+}
+
+type t_chunked_result struct {
+	Type string
+	Data struct {
+		Success    bool
+		Chunk_Info struct {
+			Chunk_Size        int64
+			Num_Chunks        int64
+			Rows              int64
+			Base_Download_Url string
+			Chunk_File_Names  []string
+		}
+	}
 }
 
 const rootURL = "https://members-ng.iracing.com"
@@ -132,7 +154,7 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 		log.Printf("Unmarshalling data from %s", url)
 	}
 
-	err = json.Unmarshal([]byte(data), &s3Link)
+	err = json.Unmarshal(data, &s3Link)
 	if err != nil {
 		return nil, err
 	}
@@ -152,6 +174,42 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 		data, err = io.ReadAll(s3Resp.Body)
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	// quick check for chunk info
+	if bytes.Contains(data, []byte("chunk_info")) {
+		var chunkedResult t_chunked_result
+
+		err = json.Unmarshal(data, &chunkedResult)
+
+		if err == nil {
+			var chunks []Chunk
+
+			for chunkNumber, chunkFileName := range chunkedResult.Data.Chunk_Info.Chunk_File_Names {
+				chunkUrl := fmt.Sprintf("%s%s", chunkedResult.Data.Chunk_Info.Base_Download_Url, chunkFileName)
+				chunkResp, err := i.retryingGet(chunkUrl)
+				if err != nil {
+					return nil, err
+				}
+
+				chunkData, err := io.ReadAll(chunkResp.Body)
+				if err != nil {
+					return nil, err
+				}
+
+				chunks = append(chunks, Chunk{
+					Number:   chunkNumber,
+					FileName: chunkFileName,
+					Data:     chunkData,
+				})
+			}
+
+			data, err = json.Marshal(chunks)
+			if err != nil {
+				return nil, err
+			}
+
 		}
 	}
 

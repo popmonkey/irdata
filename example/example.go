@@ -16,13 +16,16 @@ import (
 const fnExampleKey = "example.key"
 const fnExampleCreds = "example.creds"
 
+// this is a simple utility function that collects a username and password from the Terminal
 var credsProvider irdata.CredsFromTerminal
 
 func main() {
+	// get an instance of irdata
 	i := irdata.Open(context.Background())
 
 	defer i.Close()
 
+	// this enables some logging
 	i.EnableDebug()
 
 	// see if we have a creds file
@@ -48,46 +51,63 @@ func main() {
 		log.Panic(err)
 	}
 
+	// we'll get the current member's info - the current member is the one whose
+	//  credentials we're using to authenticate
+	//
+	// we'll cache the results of this call for 15 minutes
 	data, err := i.GetWithCache("/data/member/info", time.Duration(15)*time.Minute)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	var foo map[string]interface{}
-
-	json.Unmarshal(data, &foo)
-
 	// structured unmarshall
-	type license struct {
-		Category string  `json:"category_name"`
-		License  string  `json:"group_name"`
-		SR       float64 `json:"safety_rating"`
-		IR       float64 `json:"irating"`
-		CPI      float64 `json:"cpi"`
-	}
-
 	var member struct {
-		CustID      int64              `json:"cust_id"`
-		DisplayName string             `json:"display_name"`
-		MemberSince string             `json:"member_since"`
-		LastLogin   string             `json:"last_login"`
-		Licenses    map[string]license `json:"licenses"`
+		CustID      int64  `json:"cust_id"`
+		DisplayName string `json:"display_name"`
+		MemberSince string `json:"member_since"`
+		LastLogin   string `json:"last_login"`
+		Licenses    map[string]struct {
+			Category string  `json:"category_name"`
+			License  string  `json:"group_name"`
+			SR       float64 `json:"safety_rating"`
+			IR       float64 `json:"irating"`
+			CPI      float64 `json:"cpi"`
+		} `json:"licenses"`
 	}
 
 	if err := json.Unmarshal(data, &member); err != nil {
 		log.Panic(err)
 	}
 
-	data, err = i.GetWithCache("data/series/seasons", time.Duration(1)*time.Hour)
+	// now we'll get the most recent 90 days of sessions for this same user
+	startTime := time.Now().UTC().Add(time.Duration(-(90 * 24)) * time.Hour).Format("2006-01-02T15:04Z")
+	var uri = fmt.Sprintf("/data/results/search_series?cust_id=%d&start_range_begin=%s", member.CustID, startTime)
+
+	data, err = i.GetWithCache(uri, time.Duration(1)*time.Hour)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	// unstructured unmarshall
-	var seasons []map[string]interface{}
+	// Note that this endpoint returns chunked data so we can unmarshall into []irdata.Chunk
+	var chunks []irdata.Chunk
 
-	if err := json.Unmarshal(data, &seasons); err != nil {
+	if err := json.Unmarshal(data, &chunks); err != nil {
 		log.Panic(err)
+	}
+
+	type sessionT map[string]interface{}
+
+	var sessions []sessionT
+
+	for _, chunk := range chunks {
+		// unstructured unmarshall
+		var sessionsChunk []sessionT
+
+		if err := json.Unmarshal(chunk.Data, &sessionsChunk); err != nil {
+			log.Panic(err)
+		}
+
+		sessions = append(sessions, sessionsChunk...)
 	}
 
 	fmt.Print("\n\nMember Info:\n")
@@ -115,13 +135,21 @@ func main() {
 		)
 	}
 
-	fmt.Print("\n--- Current Series ---\n\n")
+	fmt.Printf("\n--- Sessions since %s ---\n\n", startTime)
 
-	for _, season := range seasons {
-		fmt.Printf("[%5.0f | %5.0f] %s\n",
-			season["series_id"].(float64),
-			season["season_id"].(float64),
-			season["season_name"],
+	// reverse sessions so most recent comes first
+	sort.SliceStable(sessions, func(i, j int) bool { return i > j })
+
+	for _, session := range sessions {
+		fmt.Printf("%s %d [%s: %s]\t%s Car: %s --- Started:%d Finished: %d\n",
+			session["start_time"].(string),
+			int(session["subsession_id"].(float64)),
+			session["license_category"].(string),
+			session["event_type_name"].(string),
+			session["series_name"].(string),
+			session["car_name"].(string),
+			int(session["starting_position_in_class"].(float64)),
+			int(session["finish_position_in_class"].(float64)),
 		)
 	}
 
