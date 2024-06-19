@@ -39,11 +39,11 @@ type Chunk struct {
 	Data     []byte
 }
 
-type t_s3link struct {
+type s3LinkT struct {
 	Link string
 }
 
-type t_chunked_result struct {
+type chunkedResultT struct {
 	Type string
 	Data struct {
 		Success    bool
@@ -148,7 +148,7 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 		return nil, err
 	}
 
-	var s3Link t_s3link
+	var s3Link s3LinkT
 
 	if i.isDebug {
 		log.Printf("Unmarshalling data from %s", url)
@@ -179,7 +179,7 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 
 	// quick check for chunk info
 	if bytes.Contains(data, []byte("chunk_info")) {
-		var chunkedResult t_chunked_result
+		var chunkedResult chunkedResultT
 
 		err = json.Unmarshal(data, &chunkedResult)
 

@@ -20,7 +20,7 @@ import (
 const loginURL = "https://members-ng.iracing.com/auth"
 const testUrl = "https://members-ng.iracing.com/data/constants/event_types"
 
-type t_authData struct {
+type authDataT struct {
 	Username        string
 	EncodedPassword string
 }
@@ -39,7 +39,7 @@ func (i *Irdata) AuthWithCredsFromFile(keyFilename string, authFilename string) 
 func (i *Irdata) AuthWithProvideCreds(authSource CredsProvider) error {
 	username, password := authSource.GetCreds()
 
-	var authData t_authData
+	var authData authDataT
 
 	authData.Username = string(username)
 	authData.EncodedPassword = encodePassword(username, password)
@@ -55,7 +55,7 @@ func (i *Irdata) AuthWithProvideCreds(authSource CredsProvider) error {
 func SaveProvidedCredsToFile(keyFilename string, authFilename string, authSource CredsProvider) {
 	username, password := authSource.GetCreds()
 
-	var authData t_authData
+	var authData authDataT
 
 	authData.Username = string(username)
 	authData.EncodedPassword = encodePassword(username, password)
@@ -63,7 +63,7 @@ func SaveProvidedCredsToFile(keyFilename string, authFilename string, authSource
 	writeCreds(keyFilename, authFilename, authData)
 }
 
-func writeCreds(keyFilename string, authFilename string, authData t_authData) {
+func writeCreds(keyFilename string, authFilename string, authData authDataT) {
 	key := getKey(keyFilename)
 
 	block, err := aes.NewCipher(key)
@@ -106,7 +106,7 @@ func writeCreds(keyFilename string, authFilename string, authData t_authData) {
 	}
 }
 
-func readCreds(keyFilename string, authFilename string) t_authData {
+func readCreds(keyFilename string, authFilename string) authDataT {
 	key := getKey(keyFilename)
 
 	block, err := aes.NewCipher(key)
@@ -123,7 +123,7 @@ func readCreds(keyFilename string, authFilename string) t_authData {
 		log.Panic(err)
 	}
 
-	var authData t_authData
+	var authData authDataT
 
 	base64data, err := os.ReadFile(authFilename)
 	if err != nil {
@@ -153,7 +153,7 @@ func readCreds(keyFilename string, authFilename string) t_authData {
 }
 
 // auth client
-func (i *Irdata) auth(authData t_authData) error {
+func (i *Irdata) auth(authData authDataT) error {
 	if i.isAuthed {
 		return nil
 	}

@@ -103,7 +103,7 @@ func TestWriteCreds(t *testing.T) {
 	var creds testCreds
 	username, password := creds.GetCreds()
 
-	authDataExpected := &t_authData{
+	authDataExpected := &authDataT{
 		Username:        string(username),
 		EncodedPassword: encodePassword(username, password),
 	}
