@@ -13,8 +13,8 @@ import (
 	"github.com/popmonkey/irdata"
 )
 
-const fnExampleKey = "example.key"
-const fnExampleCreds = "example.creds"
+const fnExampleKey = "../example.key"
+const fnExampleCreds = "../example.creds"
 
 // this is a simple utility function that collects a username and password from the Terminal
 var credsProvider irdata.CredsFromTerminal
