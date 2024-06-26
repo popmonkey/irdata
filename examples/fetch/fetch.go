@@ -27,6 +27,7 @@ func main() {
 
 	defer api.Close()
 
+	api.EnableDebug()
 	api.EnableCache(cacheDir)
 
 	if _, err := os.Stat(credsFn); err != nil {

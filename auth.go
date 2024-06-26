@@ -10,11 +10,12 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 const loginURL = "https://members-ng.iracing.com/auth"
@@ -37,6 +38,8 @@ func (i *Irdata) AuthWithCredsFromFile(keyFilename string, authFilename string) 
 
 // AuthWithProvideCreds calls the provided function for the username and password
 func (i *Irdata) AuthWithProvideCreds(authSource CredsProvider) error {
+	log.WithFields(log.Fields{"authSource": authSource}).Debug("Calling CredsProvider")
+
 	username, password := authSource.GetCreds()
 
 	var authData authDataT
@@ -53,6 +56,8 @@ func (i *Irdata) AuthWithProvideCreds(authSource CredsProvider) error {
 //
 // This function will panic out on errors
 func SaveProvidedCredsToFile(keyFilename string, authFilename string, authSource CredsProvider) {
+	log.WithFields(log.Fields{"authSource": authSource}).Debug("Calling CredsProvider")
+
 	username, password := authSource.GetCreds()
 
 	var authData authDataT
@@ -68,6 +73,7 @@ func writeCreds(keyFilename string, authFilename string, authData authDataT) {
 
 	block, err := aes.NewCipher(key)
 
+	// not a defer because we want to do this right away
 	shred(&key)
 
 	if err != nil {
@@ -111,6 +117,7 @@ func readCreds(keyFilename string, authFilename string) authDataT {
 
 	block, err := aes.NewCipher(key)
 
+	// not a defer because we want to do this right away
 	shred(&key)
 
 	if err != nil {
@@ -162,9 +169,7 @@ func (i *Irdata) auth(authData authDataT) error {
 		return errors.New("must provide credentials before calling")
 	}
 
-	if i.isDebug {
-		log.Println("Authenticating")
-	}
+	log.Info("Authenticating")
 
 	retries := 5
 
@@ -182,9 +187,7 @@ func (i *Irdata) auth(authData authDataT) error {
 			break
 		}
 
-		if i.isDebug {
-			log.Printf(" *** Retrying Authentication due to error %d", resp.StatusCode)
-		}
+		log.WithFields(log.Fields{"resp.StatusCode": resp.StatusCode}).Debug(" *** Retrying Authentication due to error")
 
 		retries--
 
@@ -196,9 +199,10 @@ func (i *Irdata) auth(authData authDataT) error {
 	}
 
 	if resp.StatusCode != 200 {
-		if i.isDebug {
-			log.Printf("Failed to authenticate [StatusCode: %d] %s", resp.StatusCode, resp.Status)
-		}
+		log.WithFields(log.Fields{
+			"resp.Status":     resp.Status,
+			"resp.StatusCode": resp.StatusCode,
+		}).Info("Failed to authenticate")
 
 		return errors.New("unexpected auth failure, try debug")
 	}
@@ -213,17 +217,17 @@ func (i *Irdata) auth(authData authDataT) error {
 		if resp.StatusCode == 401 {
 			return errors.New("login failed, check creds")
 		} else {
-			if i.isDebug {
-				log.Printf("Unexpected status to %s [StatusCode: %d]: %s", testUrl, resp.StatusCode, resp.Status)
-			}
+			log.WithFields(log.Fields{
+				"resp.Status":     resp.Status,
+				"resp.StatusCode": resp.StatusCode,
+				"testUrl":         testUrl,
+			}).Info("Unexpected status")
 
 			return errors.New("unexpected auth failure, try debug")
 		}
 	}
 
-	if i.isDebug {
-		log.Println("Login succeeded")
-	}
+	log.Info("Login succeeded")
 
 	i.isAuthed = true
 

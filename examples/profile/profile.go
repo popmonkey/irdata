@@ -88,26 +88,12 @@ func main() {
 		log.Panic(err)
 	}
 
-	// Note that this endpoint returns chunked data so we can unmarshall into []irdata.Chunk
-	var chunks []irdata.Chunk
-
-	if err := json.Unmarshal(data, &chunks); err != nil {
-		log.Panic(err)
-	}
-
 	type sessionT map[string]interface{}
 
 	var sessions []sessionT
 
-	for _, chunk := range chunks {
-		// unstructured unmarshall
-		var sessionsChunk []sessionT
-
-		if err := json.Unmarshal(chunk.Data, &sessionsChunk); err != nil {
-			log.Panic(err)
-		}
-
-		sessions = append(sessions, sessionsChunk...)
+	if err := json.Unmarshal(data, &sessions); err != nil {
+		log.Panic(err)
 	}
 
 	fmt.Print("\n\nMember Info:\n")

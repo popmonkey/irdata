@@ -3,13 +3,14 @@ package irdata
 import (
 	"crypto/md5"
 	"errors"
-	"log"
 	"time"
 
 	"git.mills.io/prologic/bitcask"
+	log "github.com/sirupsen/logrus"
 )
 
-const _maxValueSize = 1024 * 1024 * 128 // 128MB
+const _maxValueSize = 1024 * 1024 * 256 // 256MB
+const _maxKeySize = 1024 * 4            // 4K
 
 type hashedKey []byte
 
@@ -19,39 +20,32 @@ func (i *Irdata) cacheOpen(cacheDir string) error {
 	i.cask, err = bitcask.Open(
 		cacheDir,
 		bitcask.WithMaxValueSize(_maxValueSize),
+		bitcask.WithMaxKeySize(_maxKeySize),
 		bitcask.WithSync(true),
 	)
 
 	return err
 }
 
-func (i *Irdata) cacheClose() error {
+func (i *Irdata) cacheClose() {
 	// call close no matter what
 	defer i.cask.Close()
 
-	if i.isDebug {
-		log.Printf("RunGC")
-	}
+	log.Info("RunGC")
 
 	err := i.cask.RunGC()
 	if err != nil {
-		return err
+		log.WithField("err", err).Info("cask.RunGC failed")
 	}
 
-	if i.isDebug {
-		log.Printf("Merging cache")
-	}
+	log.Info("Merging cache")
 
 	err = i.cask.Merge()
 	if err != nil {
-		return err
+		log.WithField("err", err).Info("cask.Merge failed")
 	}
 
-	if i.isDebug {
-		log.Printf("Done")
-	}
-
-	return nil
+	log.Info("Done")
 }
 
 func hashKey(key string) hashedKey {

@@ -4,6 +4,8 @@
 //     encrypted credentials file protected by a secure key file.
 //   - The iRacing /data API returns data in the form of S3 links.  This package
 //     delivers the S3 results directly handling all the redirection.
+//   - If an API endpoint returns chunked data, irdata will handle the chunk fetching
+//     and return a merged object (note, it could be *huge*)
 //   - An optional caching layer is provided to minimize direct calls to the /data
 //     endpoints themselves as those are rate limited.
 //
@@ -17,17 +19,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"time"
 
 	"git.mills.io/prologic/bitcask"
+	log "github.com/sirupsen/logrus"
 )
 
 type Irdata struct {
-	isDebug    bool
 	httpClient http.Client
 	isAuthed   bool
 	cask       *bitcask.Bitcask
@@ -62,11 +63,17 @@ const rootURL = "https://members-ng.iracing.com"
 var urlBase *url.URL
 
 func init() {
+	log.SetFormatter(&log.TextFormatter{
+		FullTimestamp: true,
+	})
+
 	var err error
 	urlBase, err = url.Parse(rootURL)
 	if err != nil {
 		log.Panic(err)
 	}
+
+	log.SetLevel(log.ErrorLevel)
 }
 
 func Open(ctx context.Context) *Irdata {
@@ -83,7 +90,6 @@ func Open(ctx context.Context) *Irdata {
 	}
 
 	return &Irdata{
-		isDebug:    false,
 		httpClient: client,
 		isAuthed:   false,
 		cask:       nil,
@@ -94,25 +100,25 @@ func Open(ctx context.Context) *Irdata {
 // Calling Close when done is important when using caching - this will compact the cache.
 func (i *Irdata) Close() {
 	if i.cask != nil {
-		err := i.cacheClose()
-		if err != nil {
-			log.Panic(err)
-		}
+		i.cacheClose()
 	}
 }
 
 // EnableCache enables on the optional caching layer which will
 // use the directory path provided as cacheDir
 func (i *Irdata) EnableCache(cacheDir string) error {
-	if i.isDebug {
-		log.Printf("Enabling cache in %s", cacheDir)
-	}
+	log.WithFields(log.Fields{"cacheDir": cacheDir}).Info("Enabling cache")
 	return i.cacheOpen(cacheDir)
 }
 
-// EnableDebug enables debug logging which uses the log module
+// EnableDebug enables debug logging which uses the logrus module
 func (i *Irdata) EnableDebug() {
-	i.isDebug = true
+	log.SetLevel(log.DebugLevel)
+}
+
+// DisableDebug disables debug logging
+func (i *Irdata) DisableDebug() {
+	log.SetLevel(log.ErrorLevel)
 }
 
 // Get returns the result value for the uri provided (e.g. "/data/member/info")
@@ -132,9 +138,7 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 
 	url := urlBase.ResolveReference(uriRef)
 
-	if i.isDebug {
-		log.Printf("Fetching from %s", url)
-	}
+	log.WithFields(log.Fields{"url": url}).Info("Fetching")
 
 	resp, err := i.retryingGet(url.String())
 	if err != nil {
@@ -150,9 +154,7 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 
 	var s3Link s3LinkT
 
-	if i.isDebug {
-		log.Printf("Unmarshalling data from %s", url)
-	}
+	log.WithFields(log.Fields{"url": url}).Debug("Unmarshalling")
 
 	err = json.Unmarshal(data, &s3Link)
 	if err != nil {
@@ -160,9 +162,7 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 	}
 
 	if s3Link.Link != "" {
-		if i.isDebug {
-			log.Printf("Fetching from link %s", s3Link.Link)
-		}
+		log.WithFields(log.Fields{"s3Link.Link": s3Link.Link}).Debug("Following s3link")
 
 		s3Resp, err := i.retryingGet(s3Link.Link)
 		if err != nil {
@@ -184,10 +184,18 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 		err = json.Unmarshal(data, &chunkedResult)
 
 		if err == nil {
-			var chunks []Chunk
+			log.Info("Chunked data detected")
+
+			var results []interface{}
 
 			for chunkNumber, chunkFileName := range chunkedResult.Data.Chunk_Info.Chunk_File_Names {
 				chunkUrl := fmt.Sprintf("%s%s", chunkedResult.Data.Chunk_Info.Base_Download_Url, chunkFileName)
+
+				log.WithFields(log.Fields{
+					"chunkNumber": chunkNumber,
+					"chunkUrl":    chunkUrl,
+				}).Debug("Fetching chunk")
+
 				chunkResp, err := i.retryingGet(chunkUrl)
 				if err != nil {
 					return nil, err
@@ -198,14 +206,22 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 					return nil, err
 				}
 
-				chunks = append(chunks, Chunk{
-					Number:   chunkNumber,
-					FileName: chunkFileName,
-					Data:     chunkData,
-				})
+				var r []interface{}
+
+				err = json.Unmarshal(chunkData, &r)
+				if err != nil {
+					return nil, err
+				}
+
+				log.WithFields(log.Fields{
+					"len(chunkData)": len(chunkData),
+					"len(r)":         len(r),
+				}).Debug("Got chunk bytes")
+
+				results = append(results, r...)
 			}
 
-			data, err = json.Marshal(chunks)
+			data, err = json.Marshal(results)
 			if err != nil {
 				return nil, err
 			}
@@ -222,20 +238,21 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 // The ttl defines for how long the results should be cached.
 //
 // You must call EnableCache before calling GetWithCache
+// NOTE: If data is fetched this will return the data even
+// if it can't be written to the cache (along with an error)
 func (i *Irdata) GetWithCache(uri string, ttl time.Duration) ([]byte, error) {
 	if i.cask == nil {
 		return nil, errors.New("cache must be enabled")
 	}
 
-	if i.isDebug {
-		log.Printf("Checking for cached data for %s", uri)
-	}
+	log.WithFields(log.Fields{"uri": uri}).Debug("Checking for cached data")
 
 	data, err := i.getCachedData(uri)
 	if err != nil {
-		if i.isDebug {
-			log.Printf("Unable to get cached data for %s", uri)
-		}
+		log.WithFields(log.Fields{
+			"err": err,
+			"uri": uri,
+		}).Error("Unable to get cached data")
 		return nil, err
 	}
 
@@ -243,44 +260,51 @@ func (i *Irdata) GetWithCache(uri string, ttl time.Duration) ([]byte, error) {
 		return data, nil
 	}
 
-	if i.isDebug {
-		log.Printf("Nothing in cache so will call iRacing /data API @ %s", uri)
-	}
+	log.WithFields(log.Fields{"uri": uri}).Debug("Nothing in cache")
 
 	data, err = i.Get(uri)
 	if err != nil {
 		return nil, err
 	}
 
-	if i.isDebug {
-		log.Printf("Got data, now writing to cache")
-	}
+	log.WithFields(log.Fields{
+		"ttl": ttl,
+		"uri": uri,
+	}).Debug("Got data, writing to cache")
 
 	err = i.setCachedData(uri, data, ttl)
 	if err != nil {
-		return nil, err
+		log.WithFields(log.Fields{
+			"uri":       uri,
+			"err":       err,
+			"len(data)": len(data),
+		}).Error("Unable to cache")
+
+		return data, err
 	}
 
 	return data, nil
 }
 
 func (i *Irdata) retryingGet(url string) (resp *http.Response, err error) {
-	if i.isDebug {
-		log.Printf("Fetching %s", url)
-	}
-
 	retries := 5
 
 	for retries > 0 {
+		log.WithFields(log.Fields{
+			"url":     url,
+			"retries": retries,
+		}).Info("httpClient.Get")
+
 		resp, err = i.httpClient.Get(url)
 
 		if resp.StatusCode < 500 {
 			break
 		}
 
-		if i.isDebug {
-			log.Printf(" *** Retrying [%s] due to error %d", url, resp.StatusCode)
-		}
+		log.WithFields(log.Fields{
+			"url":             url,
+			"resp.StatusCode": resp.StatusCode,
+		}).Info("*** Retrying")
 
 		retries--
 

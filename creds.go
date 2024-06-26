@@ -2,9 +2,9 @@ package irdata
 
 import (
 	"fmt"
-	"log"
 	"os"
 
+	log "github.com/sirupsen/logrus"
 	"golang.org/x/term"
 )
 
