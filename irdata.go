@@ -158,7 +158,8 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 
 	err = json.Unmarshal(data, &s3Link)
 	if err != nil {
-		return nil, err
+		// there's no link so just return directly
+		return data, nil
 	}
 
 	if s3Link.Link != "" {
