@@ -1,7 +1,6 @@
 package irdata
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,8 +14,6 @@ const testDataString2 = "WE ARE CHECKING"
 const testTtl = time.Duration(1) * time.Hour
 
 var testCacheDir = filepath.Join(os.TempDir(), "irdata-cache")
-
-var i *Irdata = Open(context.Background())
 
 func setupCacheTest() {
 	i.cacheOpen(testCacheDir)

@@ -130,6 +130,15 @@ Run tests:
 go test
 ```
 
+These tests run without actually reaching out to the API.  To run the complete gamut of tests
+you need to specify an existing key and creds file (such as those created in the examples) by
+setting environment variables `IRDATA_TEST_KEY` to point to the keyfile and `IRDATA_TEST_CREDS`
+to point to the creds file encrypted by the key:
+
+```sh
+IRDATA_TEST_KEY=/path/to/key IRDATA_TEST_CREDS=/path/to/creds go test
+```
+
 Run examples:
 
 ```sh

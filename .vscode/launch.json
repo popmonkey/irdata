@@ -18,6 +18,22 @@
             "request": "launch",
             "mode": "debug",
             "program": "examples/profile/profile.go"
-        }
+        },
+        {
+            "name": "Launch test function",
+            "type": "go",
+            "request": "launch",
+            "mode": "test",
+            "program": "${workspaceFolder}",
+            "args": [
+                // "--cover",
+            //     "-test.run",
+            //     "TestChunkedGet"
+            ],
+            "env": {
+                "IRDATA_TEST_KEY": "/path/to/key",
+                "IRDATA_TEST_CREDS": "/path/to/creds",
+            },
+        },
     ]
 }
