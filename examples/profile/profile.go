@@ -134,8 +134,8 @@ func main() {
 			session["event_type_name"].(string),
 			session["series_name"].(string),
 			session["car_name"].(string),
-			int(session["starting_position_in_class"].(float64)),
-			int(session["finish_position_in_class"].(float64)),
+			int(session["starting_position_in_class"].(float64)+1),
+			int(session["finish_position_in_class"].(float64)+1),
 		)
 	}
 
