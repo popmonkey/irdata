@@ -47,10 +47,8 @@ then use the keyfile to encrypt these in the specified credsfile.
 
 Note that the api request should be in the form of a URI, not a full URL.
 
-%[1]s creates a .%[1]s_cache directory in the current working directory.  This
-directory is used to cache results from calls to iRacings /data API for
-15 minutes (by default).  Subsequent requests to the same URI will return
-data from this cache until that it is expired.
+%[1]s can optionally cache results from iRacing's /data API. Subsequent requests to the
+same URI will return data from this cache until it is expired.  See --help.
 
 (%[1]s is built in Go using the irdata library at https://github.com/popmonkey/irdata)
 
