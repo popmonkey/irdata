@@ -71,7 +71,7 @@ data, err := api.Get("/data/member/info")
 ```
 
 If successful, this returns a `[]byte` array containing the JSON response.  See
-[the example](example/example.go) for some json handling logic.
+[the profile example](examples/profile/profile.go) for some json handling logic.
 
 The API is lightly documented via the /data API itself.  Check out the
 [latest version](https://github.com/popmonkey/iracing-data-api-doc/blob/main/doc.json)
@@ -93,8 +93,8 @@ api.EnableCache(".cache")
 data, err := api.GetWithCache("/data/member/info", time.Duration(15)*time.Minute)
 ```
 
-Subsequent calls over the next 15 minutes will return `data` from the local cache before
-calling the iRacing /data API again.
+Subsequent calls to the same URI (with same parameters) over the next 15 minutes will return
+`data` from the local cache before calling the iRacing /data API again.
 
 ## Chunked responses
 
