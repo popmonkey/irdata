@@ -5,12 +5,12 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch fetch.go",
+            "name": "Launch irfetch.go",
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "examples/fetch/fetch.go",
-            "args": ["../example.key", "../example.creds", "/data/results/search_series?season_year=2024&season_quarter=3&cust_id=294544"],
+            "program": "examples/irfetch/irfetch.go",
+            "args": ["-h", "-c", "boof", "../example.key", "../example.creds", "/data/results/search_series?season_year=2024&season_quarter=3&cust_id=294544"],
         },
         {
             "name": "Launch profile.go",

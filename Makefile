@@ -1,30 +1,30 @@
-all: build/fetch-osx.zip build/fetch-win386.zip build/fetch-linux386.zip
+all: build/irfetch-osx.zip build/irfetch-win386.zip build/irfetch-linux386.zip
 
 .PHONY: clean
 clean:
 	rm build/*
 
-build/fetch.osx-arm64: *.go examples/fetch/*.go
-	cd examples/fetch && \
-	GOOS=darwin GOARCH=arm64 go build -o ../../build/fetch.osx-arm64
+build/irfetch.osx-arm64: *.go examples/irfetch/*.go
+	cd examples/irfetch && \
+	GOOS=darwin GOARCH=arm64 go build -o ../../build/irfetch.osx-arm64
 
-build/fetch.osx-amd64: *.go examples/fetch/*.go
-	cd examples/fetch && \
-	GOOS=darwin GOARCH=amd64 go build -o ../../build/fetch.osx-amd64
+build/irfetch.osx-amd64: *.go examples/irfetch/*.go
+	cd examples/irfetch && \
+	GOOS=darwin GOARCH=amd64 go build -o ../../build/irfetch.osx-amd64
 
-build/fetch-osx.zip: build/fetch.osx-arm64 build/fetch.osx-amd64
-	lipo -create -output build/fetch.osx-universal build/fetch.osx-arm64 build/fetch.osx-amd64
+build/irfetch-osx.zip: build/irfetch.osx-arm64 build/irfetch.osx-amd64
+	lipo -create -output build/irfetch.osx-universal build/irfetch.osx-arm64 build/irfetch.osx-amd64
 	cd build && \
-	zip fetch-osx.zip fetch.osx-universal
+	zip irfetch-osx.zip irfetch.osx-universal
 
-build/fetch-win386.zip: *.go examples/fetch/*.go
-	cd examples/fetch && \
-	GOOS=windows GOARCH=386 go build -o ../../build/fetch.exe
+build/irfetch-win386.zip: *.go examples/irfetch/*.go
+	cd examples/irfetch && \
+	GOOS=windows GOARCH=386 go build -o ../../build/irfetch.exe
 	cd build && \
-	zip fetch-win386.zip fetch.exe
+	zip irfetch-win386.zip irfetch.exe
 
-build/fetch-linux386.zip: *.go examples/fetch/*.go
-	cd examples/fetch && \
-	GOOS=linux GOARCH=386 go build -o ../../build/fetch
+build/irfetch-linux386.zip: *.go examples/irfetch/*.go
+	cd examples/irfetch && \
+	GOOS=linux GOARCH=386 go build -o ../../build/irfetch
 	cd build && \
-	zip fetch-linux386.zip fetch
+	zip irfetch-linux386.zip irfetch

@@ -22,7 +22,7 @@ go.work
 go.work.sum
 
 # irAPI example
-examples/*/.cache
+examples/*/.*cache
 examples/example.creds
 
 # builds

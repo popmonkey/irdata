@@ -50,10 +50,10 @@ api.AuthWithCredsFromFile(keyFn, credsFn)
 ### Creating and protecting the keyfile
 
 For the key file, you need to create a random string of 16, 24, or 32
-bytes and hex encode it into a file.  The file must be set to read only by
+bytes and base64 encode it into a file.  The file must be set to read only by
 user (`0400`) and it is recommended this lives someplace safe.
 
-Example key file creation in Linux:
+Example key file creation in Linux or OS X:
 
 ```sh
 openssl rand -base64 32 > ~/my.key && chmod 0400 ~/my.key
