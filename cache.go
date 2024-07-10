@@ -31,18 +31,18 @@ func (i *Irdata) cacheClose() {
 	// call close no matter what
 	defer i.cask.Close()
 
-	log.Info("RunGC")
+	log.Info("Running cache cleanup")
 
 	err := i.cask.RunGC()
 	if err != nil {
 		log.WithField("err", err).Info("cask.RunGC failed")
 	}
 
-	log.Info("Merging cache")
+	log.Debug("Merging cache")
 
 	err = i.cask.Merge()
 	if err != nil {
-		log.WithField("err", err).Info("cask.Merge failed")
+		log.WithField("err", err).Warn("cask.Merge failed")
 	}
 
 	log.Info("Done")
@@ -58,20 +58,31 @@ func (i *Irdata) getCachedData(key string) ([]byte, error) {
 
 	if errors.Is(err, bitcask.ErrKeyExpired) || errors.Is(err, bitcask.ErrKeyNotFound) {
 		return nil, nil
+	} else if err != nil {
+		return nil, makeErrorf("cache get error for %s [%v]", key, err)
 	}
 
-	return data, err
+	return data, nil
 }
 
 func (i *Irdata) setCachedData(key string, data []byte, ttl time.Duration) error {
-	return i.cask.PutWithTTL(hashKey(key), data, ttl)
+	err := i.cask.PutWithTTL(hashKey(key), data, ttl)
+	if err != nil {
+		return makeErrorf("cache put error for %s [%v]", key, err)
+	}
+
+	return nil
 }
 
 func (i *Irdata) deleteCachedData(key string) error {
 	k := hashKey(key)
+
 	if i.cask.Has(k) {
-		return i.cask.Delete(k)
-	} else {
-		return nil
+		err := i.cask.Delete(k)
+		if err != nil {
+			return makeErrorf("cache delete error for %s [%v]", key, err)
+		}
 	}
+
+	return nil
 }

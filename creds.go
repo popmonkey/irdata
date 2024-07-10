@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	log "github.com/sirupsen/logrus"
 	"golang.org/x/term"
 )
 
 type CredsProvider interface {
-	GetCreds() ([]byte, []byte)
+	GetCreds() ([]byte, []byte, error)
 }
 
 type CredsFromTerminal struct{}
@@ -17,7 +16,7 @@ type CredsFromTerminal struct{}
 // CredsFromTerminal can be used with any of the SetCreds* functions
 // and will prompt for iRacing credentials (username and password) from
 // the terminal.
-func (CredsFromTerminal) GetCreds() ([]byte, []byte) {
+func (CredsFromTerminal) GetCreds() ([]byte, []byte, error) {
 	username := ""
 
 	fmt.Println("Please provide creds for an active iRacing account")
@@ -29,8 +28,8 @@ func (CredsFromTerminal) GetCreds() ([]byte, []byte) {
 	fmt.Printf("\n\n")
 
 	if err != nil {
-		log.Panic("Error ReadPassword", err)
+		return nil, nil, makeErrorf("Unable to read password [%v]", err)
 	}
 
-	return []byte(username), password_bytes
+	return []byte(username), password_bytes, nil
 }

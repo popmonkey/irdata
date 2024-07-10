@@ -26,7 +26,7 @@ func main() {
 	defer i.Close()
 
 	// this enables some logging
-	i.EnableDebug()
+	i.SetLogLevel(irdata.LogLevelDebug)
 
 	// see if we have a creds file
 	if _, err := os.Stat(fnExampleCreds); err == nil {

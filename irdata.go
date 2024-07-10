@@ -16,7 +16,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -39,6 +38,16 @@ type Chunk struct {
 	FileName string
 	Data     []byte
 }
+
+type LogLevel int8
+
+const (
+	LogLevelFatal LogLevel = iota
+	LogLevelError LogLevel = iota
+	LogLevelWarn  LogLevel = iota
+	LogLevelInfo  LogLevel = iota
+	LogLevelDebug LogLevel = iota
+)
 
 type s3LinkT struct {
 	Link string
@@ -107,7 +116,7 @@ func (i *Irdata) Close() {
 // EnableCache enables on the optional caching layer which will
 // use the directory path provided as cacheDir
 func (i *Irdata) EnableCache(cacheDir string) error {
-	log.WithFields(log.Fields{"cacheDir": cacheDir}).Info("Enabling cache")
+	log.WithFields(log.Fields{"cacheDir": cacheDir}).Debug("Enabling cache")
 	return i.cacheOpen(cacheDir)
 }
 
@@ -121,6 +130,22 @@ func (i *Irdata) DisableDebug() {
 	log.SetLevel(log.ErrorLevel)
 }
 
+// SetLogLevel sets the loging level using the logrus module
+func (i *Irdata) SetLogLevel(logLevel LogLevel) {
+	switch logLevel {
+	case LogLevelFatal:
+		log.SetLevel(log.FatalLevel)
+	case LogLevelError:
+		log.SetLevel(log.ErrorLevel)
+	case LogLevelInfo:
+		log.SetLevel(log.InfoLevel)
+	case LogLevelWarn:
+		log.SetLevel(log.WarnLevel)
+	case LogLevelDebug:
+		log.SetLevel(log.DebugLevel)
+	}
+}
+
 // Get returns the result value for the uri provided (e.g. "/data/member/info")
 //
 // The value returned is a JSON byte array and a potential error.
@@ -128,7 +153,7 @@ func (i *Irdata) DisableDebug() {
 // Get will automatically retry 5 times if iRacing returns 500 errors
 func (i *Irdata) Get(uri string) ([]byte, error) {
 	if !i.isAuthed {
-		return nil, errors.New("must auth first")
+		return nil, makeErrorf("must auth first")
 	}
 
 	uriRef, err := url.Parse(uri)
@@ -138,7 +163,7 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 
 	url := urlBase.ResolveReference(uriRef)
 
-	log.WithFields(log.Fields{"url": url}).Info("Fetching")
+	log.WithFields(log.Fields{"url": url}).Debug("Fetching")
 
 	resp, err := i.retryingGet(url.String())
 	if err != nil {
@@ -185,7 +210,7 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 		err = json.Unmarshal(data, &chunkedResult)
 
 		if err == nil {
-			log.Info("Chunked data detected")
+			log.Debug("Chunked data detected")
 
 			var results []interface{}
 
@@ -243,7 +268,7 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 // if it can't be written to the cache (along with an error)
 func (i *Irdata) GetWithCache(uri string, ttl time.Duration) ([]byte, error) {
 	if i.cask == nil {
-		return nil, errors.New("cache must be enabled")
+		return nil, makeErrorf("cache must be enabled")
 	}
 
 	log.WithFields(log.Fields{"uri": uri}).Debug("Checking for cached data")
@@ -258,6 +283,7 @@ func (i *Irdata) GetWithCache(uri string, ttl time.Duration) ([]byte, error) {
 	}
 
 	if data != nil {
+		log.WithFields(log.Fields{"uri": uri}).Debug("Cached data found")
 		return data, nil
 	}
 
@@ -302,14 +328,17 @@ func (i *Irdata) retryingGet(url string) (resp *http.Response, err error) {
 			break
 		}
 
+		retries--
+
+		backoff := time.Duration((6-retries)*5) * time.Second
+
 		log.WithFields(log.Fields{
 			"url":             url,
 			"resp.StatusCode": resp.StatusCode,
-		}).Info("*** Retrying")
+			"backoff":         backoff,
+		}).Warn("*** Retrying")
 
-		retries--
-
-		time.Sleep(time.Duration((6-retries)*5) * time.Second)
+		time.Sleep(backoff)
 	}
 
 	return resp, err

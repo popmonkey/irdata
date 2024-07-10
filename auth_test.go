@@ -34,7 +34,11 @@ func cleanupAuthTest() {
 }
 
 func TestNonce(t *testing.T) {
-	block, err := aes.NewCipher(getKey(testKeyFilename))
+	key, err := getKey(testKeyFilename)
+
+	assert.NoError(t, err)
+
+	block, err := aes.NewCipher(key)
 
 	assert.NoError(t, err)
 
@@ -60,10 +64,12 @@ func TestNonce(t *testing.T) {
 func TestEncodePassword(t *testing.T) {
 	encodedPasswordExpected := "nKb060s95vcF0RpjfkGKapQG1o0AgbaPz10/H6QpHn4="
 
-	encodedPasswordActual := encodePassword(testUsername, testPassword)
+	encodedPasswordActual, err := encodePassword(testUsername, testPassword)
+
+	assert.NoError(t, err)
 
 	// verify it can be decoded
-	_, err := base64.StdEncoding.Strict().DecodeString(encodedPasswordActual)
+	_, err = base64.StdEncoding.Strict().DecodeString(encodedPasswordActual)
 
 	assert.NoError(t, err)
 	assert.Equal(t, encodedPasswordExpected, encodedPasswordActual)
@@ -90,10 +96,17 @@ func TestShredKey(t *testing.T) {
 }
 
 func TestGetCreds(t *testing.T) {
-	auth := readCreds(testKeyFilename, testCredsFilename)
+	auth, err := readCreds(testKeyFilename, testCredsFilename)
+
+	assert.NoError(t, err)
 
 	assert.Equal(t, string(testUsername), auth.Username)
-	assert.Equal(t, encodePassword(testUsername, testPassword), auth.EncodedPassword)
+
+	encodedPassword, err := encodePassword(testUsername, testPassword)
+
+	assert.NoError(t, err)
+
+	assert.Equal(t, encodedPassword, auth.EncodedPassword)
 }
 
 func TestWriteCreds(t *testing.T) {
@@ -103,9 +116,13 @@ func TestWriteCreds(t *testing.T) {
 	var creds testCreds
 	username, password := creds.GetCreds()
 
+	encodedPassword, err := encodePassword(username, password)
+
+	assert.NoError(t, err)
+
 	authDataExpected := &authDataT{
 		Username:        string(username),
-		EncodedPassword: encodePassword(username, password),
+		EncodedPassword: encodedPassword,
 	}
 
 	t.Cleanup(cleanupAuthTest)
@@ -114,7 +131,9 @@ func TestWriteCreds(t *testing.T) {
 
 	writeCreds(testKeyFilename, credsFn, *authDataExpected)
 
-	authDataActual := readCreds(testKeyFilename, credsFn)
+	authDataActual, err := readCreds(testKeyFilename, credsFn)
+
+	assert.NoError(t, err)
 
 	assert.Equal(t, authDataExpected.Username, authDataActual.Username)
 	assert.Equal(t, authDataExpected.EncodedPassword, authDataActual.EncodedPassword)
