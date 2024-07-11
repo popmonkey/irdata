@@ -59,13 +59,17 @@ func (i *Irdata) AuthWithProvideCreds(authSource CredsProvider) error {
 	return i.auth(authData)
 }
 
-// SaveProvidedCredsToFile calls the provided function for the
-// username and password and then saves these credentials to authFilename
-// using the key within the keyFilename
-//
-// This function will panic out on errors
-func SaveProvidedCredsToFile(keyFilename string, authFilename string, authSource CredsProvider) error {
+// AuthAndSaveProvidedCredsToFile calls the provided function for the
+// username and password, verifies auth, and then saves these credentials to
+// authFilename using the key in  keyFilename
+func (i *Irdata) AuthAndSaveProvidedCredsToFile(keyFilename string, authFilename string, authSource CredsProvider) error {
 	log.WithFields(log.Fields{"authSource": authSource}).Debug("Calling CredsProvider")
+
+	// check that the keyfile exists before collecting creds
+	_, err := getKey(keyFilename)
+	if err != nil {
+		return err
+	}
 
 	username, password, err := authSource.GetCreds()
 	if err != nil {
@@ -76,6 +80,11 @@ func SaveProvidedCredsToFile(keyFilename string, authFilename string, authSource
 
 	authData.Username = string(username)
 	authData.EncodedPassword, err = encodePassword(username, password)
+	if err != nil {
+		return err
+	}
+
+	err = i.auth(authData)
 	if err != nil {
 		return err
 	}

@@ -38,7 +38,7 @@ You can also store your credentials in a file encrypted using a keyfile:
 ```go
 var credsProvider irdata.CredsFromTerminal
 
-irdata.SaveProvidedCredsToFile(keyFn, credsFn, credsProvider)
+api.AuthAndSaveProvidedCredsToFile(keyFn, credsFn, credsProvider)
 ```
 
 After you have a creds file you can load these into your session like so:

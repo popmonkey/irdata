@@ -13,6 +13,8 @@ import (
 	"github.com/popmonkey/irdata"
 )
 
+// example.key will need to be created.
+// see: https://github.com/popmonkey/irdata#creating-and-protecting-the-keyfile
 const fnExampleKey = "../example.key"
 const fnExampleCreds = "../example.creds"
 
@@ -38,9 +40,7 @@ func main() {
 	} else if errors.Is(err, os.ErrNotExist) {
 		fmt.Printf("%s does not exist, lets generate it\n", fnExampleCreds)
 
-		irdata.SaveProvidedCredsToFile(fnExampleKey, fnExampleCreds, credsProvider)
-
-		if err := i.AuthWithCredsFromFile(fnExampleKey, fnExampleCreds); err != nil {
+		if err := i.AuthAndSaveProvidedCredsToFile(fnExampleKey, fnExampleCreds, credsProvider); err != nil {
 			log.Panic(err)
 		}
 	} else {

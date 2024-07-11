@@ -24,6 +24,7 @@ go.work.sum
 # irAPI example
 examples/*/.*cache
 examples/example.creds
+examples/example.key
 
 # builds
 build

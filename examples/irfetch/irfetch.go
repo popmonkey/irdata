@@ -14,11 +14,14 @@ import (
 
 const toolName = "irfetch"
 
-var showHelp bool
-var useCache bool
-var cacheDir string
-var cacheDuration time.Duration
-var logDebug bool
+var (
+	showHelp      bool
+	useCache      bool
+	cacheDir      string
+	cacheDuration time.Duration
+	logDebug      bool
+	authAndStop   bool
+)
 
 func init() {
 	flag.BoolVar(&showHelp, "h", false, "show help")
@@ -28,10 +31,19 @@ func init() {
 	flag.StringVar(&cacheDir, "cachedir", "."+toolName+"_cache", "path to cache directory")
 	flag.DurationVar(&cacheDuration, "cachettl", time.Duration(15)*time.Minute, "cache TTL for this call")
 	flag.BoolVar(&logDebug, "v", false, "log verbosely")
+	flag.BoolVar(&authAndStop, "a", false, "just run auth and stop (will generate creds file)")
 }
 
 func main() {
+	var err error
+
 	flag.Parse()
+
+	flag.Usage = func() {
+		w := flag.CommandLine.Output()
+		fmt.Fprintf(w, "Usage: %s [options] <path to keyfile> <path to credsfile> <api uri>\n", toolName)
+		flag.PrintDefaults()
+	}
 
 	if showHelp {
 		fmt.Fprintf(flag.CommandLine.Output(), `
@@ -58,16 +70,13 @@ Example:
 
 
 `, toolName)
+		flag.Usage()
+		os.Exit(0)
 	}
 
 	if len(flag.Args()) != 3 {
-		flag.Usage = func() {
-			w := flag.CommandLine.Output()
-			fmt.Fprintf(w, "Usage: %s [options] <path to keyfile> <path to credsfile> <api uri>\n", toolName)
-			flag.PrintDefaults()
-		}
 		flag.Usage()
-		os.Exit(0)
+		os.Exit(1)
 	}
 
 	keyFn, credsFn, apiUri := flag.Arg(0), flag.Arg(1), flag.Arg(2)
@@ -87,12 +96,19 @@ Example:
 	}
 
 	if _, err := os.Stat(credsFn); err != nil {
-		irdata.SaveProvidedCredsToFile(keyFn, credsFn, irdata.CredsFromTerminal{})
+		err = api.AuthAndSaveProvidedCredsToFile(keyFn, credsFn, irdata.CredsFromTerminal{})
+		if err != nil {
+			log.Panic(err)
+		}
+	} else {
+		err = api.AuthWithCredsFromFile(keyFn, credsFn)
+		if err != nil {
+			log.Panic(err)
+		}
 	}
 
-	err := api.AuthWithCredsFromFile(keyFn, credsFn)
-	if err != nil {
-		log.Panic(err)
+	if authAndStop {
+		os.Exit(0)
 	}
 
 	var data []byte
