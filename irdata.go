@@ -67,6 +67,17 @@ type chunkedResultT struct {
 	}
 }
 
+type dataUrlT struct {
+	Type string
+	Data struct {
+		Success      bool
+		Subscribed   bool
+		Roster_Count int64
+		League_Id    int64
+	}
+	Data_Url string
+}
+
 const rootURL = "https://members-ng.iracing.com"
 
 var urlBase *url.URL
@@ -182,12 +193,9 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 	log.WithFields(log.Fields{"url": url}).Debug("Unmarshalling")
 
 	err = json.Unmarshal(data, &s3Link)
-	if err != nil {
-		// there's no link so just return directly
-		return data, nil
-	}
 
-	if s3Link.Link != "" {
+	// there's a link
+	if err == nil && s3Link.Link != "" {
 		log.WithFields(log.Fields{"s3Link.Link": s3Link.Link}).Debug("Following s3link")
 
 		s3Resp, err := i.retryingGet(s3Link.Link)
@@ -200,6 +208,25 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 		data, err = io.ReadAll(s3Resp.Body)
 		if err != nil {
 			return nil, err
+		}
+	} else {
+		// there's no link, check for data url
+		var dataUrl dataUrlT
+
+		err = json.Unmarshal(data, &dataUrl)
+
+		if err == nil && dataUrl.Data_Url != "" {
+			log.WithFields(log.Fields{"dataUrl.Data_Url": dataUrl.Data_Url}).Debug("Following dataUrl")
+
+			dataUrlResp, err := i.retryingGet(dataUrl.Data_Url)
+			if err != nil {
+				return nil, err
+			}
+
+			data, err = io.ReadAll(dataUrlResp.Body)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 

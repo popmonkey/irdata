@@ -10,7 +10,8 @@
             "request": "launch",
             "mode": "debug",
             "program": "examples/irfetch/irfetch.go",
-            "args": ["-h", "-c", "boof", "../example.key", "../example.creds", "/data/results/search_series?season_year=2024&season_quarter=3&cust_id=294544"],
+            // "args": ["-c", "../example.key", "../example.creds", "/data/results/search_series?season_year=2024&season_quarter=3&cust_id=294544"],
+            "args": ["../example.key", "../example.creds", "/data/league/roster?league_id=8093"],
         },
         {
             "name": "Launch profile.go",
