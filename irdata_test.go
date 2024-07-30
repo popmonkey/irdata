@@ -75,8 +75,8 @@ func TestGetWithS3Link(t *testing.T) {
 	}
 }
 
-// search_series returns chunks
-func TestChunkedGet(t *testing.T) {
+// search_series returns chunks in a data value
+func TestChunkedGetType1(t *testing.T) {
 	if auth() {
 		data, err := i.Get(
 			fmt.Sprintf(
@@ -86,8 +86,23 @@ func TestChunkedGet(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		assert.NotNil(t, data)
-		a := getJsonArray(t, data)
+		o := getJsonObject(t, data)
+		assert.NotNil(t, o)
+		a := o["data"].(map[string]interface{})["_chunk_data"].([]interface{})
 		assert.NotNil(t, a[0].(map[string]interface{})["series_short_name"])
+	}
+}
+
+// event_log returns chunks in the top level
+func TestChunkedGetType2(t *testing.T) {
+	if auth() {
+		data, err := i.Get("/data/results/event_log?subsession_id=69054157&simsession_number=0")
+		assert.NoError(t, err)
+		assert.NotNil(t, data)
+		o := getJsonObject(t, data)
+		assert.NotNil(t, o)
+		a := o["_chunk_data"].([]interface{})
+		assert.NotNil(t, a[0].(map[string]interface{})["event_code"])
 	}
 }
 

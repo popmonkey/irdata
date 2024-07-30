@@ -33,12 +33,6 @@ type Irdata struct {
 	cask       *bitcask.Bitcask
 }
 
-type Chunk struct {
-	Number   int
-	FileName string
-	Data     []byte
-}
-
 type LogLevel int8
 
 const (
@@ -53,19 +47,7 @@ type s3LinkT struct {
 	Link string
 }
 
-type chunkedResultT struct {
-	Type string
-	Data struct {
-		Success    bool
-		Chunk_Info struct {
-			Chunk_Size        int64
-			Num_Chunks        int64
-			Rows              int64
-			Base_Download_Url string
-			Chunk_File_Names  []string
-		}
-	}
-}
+const ChunkDataKey = "_chunk_data"
 
 type dataUrlT struct {
 	Type string
@@ -232,17 +214,39 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 
 	// quick check for chunk info
 	if bytes.Contains(data, []byte("chunk_info")) {
-		var chunkedResult chunkedResultT
+		var raw map[string]interface{}
 
-		err = json.Unmarshal(data, &chunkedResult)
+		err = json.Unmarshal(data, &raw)
+		if err != nil {
+			return nil, err
+		}
 
-		if err == nil {
-			log.Debug("Chunked data detected")
+		// walk the object looking for chunks
+		err = i.resolveChunks(raw)
+		if err != nil {
+			return nil, err
+		}
+
+		data, err = json.Marshal(raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return data, nil
+}
+
+func (i *Irdata) resolveChunks(raw map[string]interface{}) error {
+	for k, v := range raw {
+		if k == "chunk_info" {
+			log.Debug("Chunked data found")
 
 			var results []interface{}
 
-			for chunkNumber, chunkFileName := range chunkedResult.Data.Chunk_Info.Chunk_File_Names {
-				chunkUrl := fmt.Sprintf("%s%s", chunkedResult.Data.Chunk_Info.Base_Download_Url, chunkFileName)
+			chunkInfo := v.(map[string]interface{})
+
+			for chunkNumber, chunkFileName := range chunkInfo["chunk_file_names"].([]interface{}) {
+				chunkUrl := fmt.Sprintf("%s%s", chunkInfo["base_download_url"], chunkFileName)
 
 				log.WithFields(log.Fields{
 					"chunkNumber": chunkNumber,
@@ -251,19 +255,19 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 
 				chunkResp, err := i.retryingGet(chunkUrl)
 				if err != nil {
-					return nil, err
+					return err
 				}
 
 				chunkData, err := io.ReadAll(chunkResp.Body)
 				if err != nil {
-					return nil, err
+					return err
 				}
 
 				var r []interface{}
 
 				err = json.Unmarshal(chunkData, &r)
 				if err != nil {
-					return nil, err
+					return err
 				}
 
 				log.WithFields(log.Fields{
@@ -274,15 +278,19 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 				results = append(results, r...)
 			}
 
-			data, err = json.Marshal(results)
-			if err != nil {
-				return nil, err
+			// insert the results in the special ChunkDataKey key
+			raw[ChunkDataKey] = results
+		} else {
+			// recurse deeper into objects
+			o, ok := v.(map[string]interface{})
+			if ok {
+				i.resolveChunks(o)
 			}
-
+			// TODO: Do we need to walk arrays?  could an array have chunks?
 		}
 	}
 
-	return data, nil
+	return nil
 }
 
 // GetWithCache will first check the local cache for an unexpired result

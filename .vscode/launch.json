@@ -12,6 +12,7 @@
             "program": "examples/irfetch/irfetch.go",
             // "args": ["-c", "../example.key", "../example.creds", "/data/results/search_series?season_year=2024&season_quarter=3&cust_id=294544"],
             "args": ["../example.key", "../example.creds", "/data/league/roster?league_id=8093"],
+            // "args": ["../example.key", "../example.creds", "/data/results/event_log?subsession_id=69054157&simsession_number=0"],
         },
         {
             "name": "Launch profile.go",
@@ -28,12 +29,12 @@
             "program": "${workspaceFolder}",
             "args": [
                 // "--cover",
-            //     "-test.run",
-            //     "TestChunkedGet"
+                // "-test.run",
+                // "TestChunkedGetType2"
             ],
             "env": {
-                "IRDATA_TEST_KEY": "/path/to/key",
-                "IRDATA_TEST_CREDS": "/path/to/creds",
+                "IRDATA_TEST_KEY": "examples/example.key",
+                "IRDATA_TEST_CREDS": "examples/example.creds",
             },
         },
     ]

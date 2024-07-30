@@ -90,9 +90,9 @@ func main() {
 
 	type sessionT map[string]interface{}
 
-	var sessions []sessionT
+	var sessionsContainer sessionT
 
-	if err := json.Unmarshal(data, &sessions); err != nil {
+	if err := json.Unmarshal(data, &sessionsContainer); err != nil {
 		log.Panic(err)
 	}
 
@@ -123,10 +123,13 @@ func main() {
 
 	fmt.Printf("\n--- Sessions since %s ---\n\n", startTime)
 
+	sessions := sessionsContainer["data"].(map[string]interface{})["_chunk_data"].([]interface{})
+
 	// reverse sessions so most recent comes first
 	sort.SliceStable(sessions, func(i, j int) bool { return i > j })
 
-	for _, session := range sessions {
+	for _, sessionI := range sessions {
+		session := sessionI.(map[string]interface{})
 		fmt.Printf("%s %d [%s: %s]\t%s Car: %s --- Started:%d Finished: %d\n",
 			session["start_time"].(string),
 			int(session["subsession_id"].(float64)),

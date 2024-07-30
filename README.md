@@ -99,8 +99,9 @@ Subsequent calls to the same URI (with same parameters) over the next 15 minutes
 ## Chunked responses
 
 Some iRacing data APIs returns data in chunks (e.g. `/data/results/search_series`).  When `irdata`
-detects this it will fetch each chunk and then merge the results into a single json string.  Note that
-this object could be huge.
+detects this it will fetch each chunk and then merge the results into an object array.  This object
+array can be found in the new value `_chunk_data` which will be present where the `chunk_info` block
+was found.
 
 ## Debugging
 
