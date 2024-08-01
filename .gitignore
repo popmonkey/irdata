@@ -25,6 +25,7 @@ go.work.sum
 examples/*/.*cache
 examples/example.creds
 examples/example.key
+.irfetch_cache
 
 # builds
 build

@@ -239,43 +239,47 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 func (i *Irdata) resolveChunks(raw map[string]interface{}) error {
 	for k, v := range raw {
 		if k == "chunk_info" {
-			log.Debug("Chunked data found")
+			log.WithFields(log.Fields{
+				"chunk_info": v,
+			}).Debug("Chunked data found")
 
 			var results []interface{}
 
-			chunkInfo := v.(map[string]interface{})
+			if v != nil {
+				chunkInfo := v.(map[string]interface{})
 
-			for chunkNumber, chunkFileName := range chunkInfo["chunk_file_names"].([]interface{}) {
-				chunkUrl := fmt.Sprintf("%s%s", chunkInfo["base_download_url"], chunkFileName)
+				for chunkNumber, chunkFileName := range chunkInfo["chunk_file_names"].([]interface{}) {
+					chunkUrl := fmt.Sprintf("%s%s", chunkInfo["base_download_url"], chunkFileName)
 
-				log.WithFields(log.Fields{
-					"chunkNumber": chunkNumber,
-					"chunkUrl":    chunkUrl,
-				}).Debug("Fetching chunk")
+					log.WithFields(log.Fields{
+						"chunkNumber": chunkNumber,
+						"chunkUrl":    chunkUrl,
+					}).Debug("Fetching chunk")
 
-				chunkResp, err := i.retryingGet(chunkUrl)
-				if err != nil {
-					return err
+					chunkResp, err := i.retryingGet(chunkUrl)
+					if err != nil {
+						return err
+					}
+
+					chunkData, err := io.ReadAll(chunkResp.Body)
+					if err != nil {
+						return err
+					}
+
+					var r []interface{}
+
+					err = json.Unmarshal(chunkData, &r)
+					if err != nil {
+						return err
+					}
+
+					log.WithFields(log.Fields{
+						"len(chunkData)": len(chunkData),
+						"len(r)":         len(r),
+					}).Debug("Got chunk bytes")
+
+					results = append(results, r...)
 				}
-
-				chunkData, err := io.ReadAll(chunkResp.Body)
-				if err != nil {
-					return err
-				}
-
-				var r []interface{}
-
-				err = json.Unmarshal(chunkData, &r)
-				if err != nil {
-					return err
-				}
-
-				log.WithFields(log.Fields{
-					"len(chunkData)": len(chunkData),
-					"len(r)":         len(r),
-				}).Debug("Got chunk bytes")
-
-				results = append(results, r...)
 			}
 
 			// insert the results in the special ChunkDataKey key

@@ -53,6 +53,20 @@ func getJsonArray(t *testing.T, data []byte) []interface{} {
 	return jsonData
 }
 
+// test resolveChunks with empty chunk_info
+func TestResolveChunksEmpty(t *testing.T) {
+	raw := map[string]interface{}{}
+
+	raw["chunk_info"] = nil
+
+	assert.NoError(t, i.resolveChunks(raw))
+
+	v, ok := raw[ChunkDataKey]
+
+	assert.True(t, ok)
+	assert.Nil(t, v)
+}
+
 // event_types returns json directly
 func TestGetBasic(t *testing.T) {
 	if auth() {
