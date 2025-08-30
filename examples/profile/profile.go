@@ -30,6 +30,9 @@ func main() {
 	// this enables some logging
 	i.SetLogLevel(irdata.LogLevelDebug)
 
+	// only retry once on errors
+	i.SetRetries(1)
+
 	// see if we have a creds file
 	if _, err := os.Stat(fnExampleCreds); err == nil {
 		fmt.Printf("%s exists.  Will use those creds.\n", fnExampleCreds)

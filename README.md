@@ -147,3 +147,53 @@ pushd examples/profile
 go run profile.go
 popd
 ```
+
+## Error Handling
+
+### Automatic Retries
+
+`irdata` will automatically retry requests that fail with a server-side error (an HTTP `5xx` status code). By default, it will retry up to 5 times with a backoff period between each attempt. You can configure the number of retries:
+
+```go
+// Set the number of retries to 10
+api.SetRetries(10)
+```
+
+### Rate Limit Management
+
+The iRacing API imposes a rate limit on requests. `irdata` automatically manages this for you in one of two ways.
+
+#### Return an Error (Default)
+
+By default, if the rate limit is exceeded, `Get()` will immediately return a special error, `irdata.RateLimitExceededError`. This error type contains the time when the rate limit will reset, allowing you to build intelligent handling logic.
+
+You can check for this specific error using `errors.As`:
+
+```go
+import "errors"
+// ...
+
+data, err := api.Get("/data/member/info")
+if err != nil {
+    var rateLimitErr *irdata.RateLimitExceededError
+    if errors.As(err, &rateLimitErr) {
+        // We are being rate limited!
+        fmt.Printf("Rate limit hit. Please wait until %v to retry.\n", rateLimitErr.ResetTime)
+    } else {
+        // Handle other kinds of errors
+        log.Fatal(err)
+    }
+}
+```
+
+#### Wait and Continue
+
+Alternatively, you can configure `irdata` to automatically wait until the rate limit resets and then continue with the request. In this mode, the `Get()` call will block for the required amount of time and then return the data as if no limit was ever hit.
+
+```go
+api.SetRateLimitHandler(irdata.RateLimitWait)
+
+// This call will now block and wait if the rate limit is hit,
+// instead of returning an error.
+data, err := api.Get("/data/member/info")
+```
