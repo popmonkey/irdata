@@ -29,8 +29,8 @@
             "program": "${workspaceFolder}",
             "args": [
                 // "--cover",
-                // "-test.run",
-                // "TestChunkedGetType2"
+                "-test.run",
+                "TestGetBasic"
             ],
             "env": {
                 "IRDATA_TEST_KEY": "examples/example.key",

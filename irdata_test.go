@@ -3,8 +3,10 @@ package irdata
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,6 +33,13 @@ func auth() bool {
 
 		authed = true
 
+		// Create a temp dir for caching tests
+		dir, err := os.MkdirTemp("", "irdata-cache-")
+		if err != nil {
+			panic(err)
+		}
+		testCacheDir = dir
+
 		return true
 	}
 
@@ -51,6 +60,79 @@ func getJsonArray(t *testing.T, data []byte) []interface{} {
 	assert.NoError(t, json.Unmarshal(data, &jsonData))
 
 	return jsonData
+}
+
+// TestRateLimiting deliberately hits the rate limit concurrently to test both error and wait handlers.
+// NOTE: This test can take over a minute to run as it must wait for the rate limit to reset.
+// It is skipped by default. To run it, set the environment variable RUN_RATE_LIMIT_TEST=true
+func TestRateLimiting(t *testing.T) {
+	if os.Getenv("RUN_RATE_LIMIT_TEST") != "true" {
+		t.Skip("Skipping rate limit test; set RUN_RATE_LIMIT_TEST=true to run.")
+	}
+
+	if auth() {
+		const numRequests = 20 // Number of concurrent requests to send
+
+		// Test the default RateLimitError behavior with concurrent requests
+		t.Run("RateLimitError", func(t *testing.T) {
+			i.SetRateLimitHandler(RateLimitError)
+			var wg sync.WaitGroup
+			errs := make(chan error, numRequests)
+
+			for j := 0; j < numRequests; j++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					_, err := i.Get("/data/constants/event_types")
+					if err != nil {
+						errs <- err
+					}
+				}()
+			}
+			wg.Wait()
+			close(errs)
+
+			// Check if we received at least one rate limit error
+			foundRateLimitError := false
+			var rateLimitErr *RateLimitExceededError
+			for err := range errs {
+				if errors.As(err, &rateLimitErr) {
+					foundRateLimitError = true
+					assert.NotZero(t, rateLimitErr.ResetTime, "ResetTime should be set in the error")
+					break
+				}
+			}
+			assert.True(t, foundRateLimitError, "Expected at least one error of type *RateLimitExceededError from concurrent requests")
+		})
+
+		// Test the RateLimitWait behavior with concurrent requests
+		t.Run("RateLimitWait", func(t *testing.T) {
+			i.SetRateLimitHandler(RateLimitWait)
+			var wg sync.WaitGroup
+			errs := make(chan error, numRequests)
+
+			// This call should now wait for the reset and succeed.
+			// It will take a while.
+			for j := 0; j < numRequests; j++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					_, err := i.Get("/data/constants/event_types")
+					if err != nil {
+						errs <- err
+					}
+				}()
+			}
+			wg.Wait()
+			close(errs)
+
+			// Check that there were no errors
+			assert.Len(t, errs, 0, "Expected no errors when handler is set to wait")
+		})
+
+		// Reset to defaults for other tests
+		i.SetRateLimitHandler(RateLimitError)
+	}
 }
 
 // test resolveChunks with empty chunk_info
@@ -122,7 +204,9 @@ func TestChunkedGetType2(t *testing.T) {
 
 // test with cached
 func TestCachedGetBasic(t *testing.T) {
-	i.EnableCache(testCacheDir)
+	err := i.EnableCache(testCacheDir)
+	assert.NoError(t, err)
+
 	if auth() {
 		data, err := i.GetWithCache("/data/constants/event_types", time.Duration(2)*time.Minute)
 		assert.NoError(t, err)

@@ -21,16 +21,45 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strconv"
+	"sync"
 	"time"
 
 	"git.mills.io/prologic/bitcask"
 	log "github.com/sirupsen/logrus"
 )
 
+// RateLimitHandler defines the behavior when a rate limit is encountered.
+type RateLimitHandler int
+
+const (
+	// RateLimitError (default) will cause Get methods to return a RateLimitExceededError.
+	RateLimitError RateLimitHandler = iota
+	// RateLimitWait will cause the Get method to pause and wait until the rate limit resets.
+	RateLimitWait
+)
+
+// RateLimitExceededError is returned when the iRacing API rate limit has been exceeded.
+// It includes the time when the rate limit is expected to reset.
+type RateLimitExceededError struct {
+	ResetTime time.Time
+}
+
+func (e *RateLimitExceededError) Error() string {
+	return fmt.Sprintf("iRacing API rate limit exceeded; resets at %v", e.ResetTime)
+}
+
 type Irdata struct {
 	httpClient http.Client
 	isAuthed   bool
 	cask       *bitcask.Bitcask
+	getRetries int
+
+	// Rate limiting fields
+	rateLimitHandler   RateLimitHandler
+	rateLimitMu        sync.Mutex
+	rateLimitRemaining int
+	rateLimitReset     time.Time
 }
 
 type LogLevel int8
@@ -44,20 +73,13 @@ const (
 )
 
 type s3LinkT struct {
-	Link string
+	Link string `json:"link"`
 }
 
 const ChunkDataKey = "_chunk_data"
 
 type dataUrlT struct {
-	Type string
-	Data struct {
-		Success      bool
-		Subscribed   bool
-		Roster_Count int64
-		League_Id    int64
-	}
-	Data_Url string
+	DataURL string `json:"data_url"`
 }
 
 const rootURL = "https://members-ng.iracing.com"
@@ -92,9 +114,11 @@ func Open(ctx context.Context) *Irdata {
 	}
 
 	return &Irdata{
-		httpClient: client,
-		isAuthed:   false,
-		cask:       nil,
+		httpClient:       client,
+		isAuthed:         false,
+		cask:             nil,
+		getRetries:       0,
+		rateLimitHandler: RateLimitError, // Default to erroring out
 	}
 }
 
@@ -113,16 +137,6 @@ func (i *Irdata) EnableCache(cacheDir string) error {
 	return i.cacheOpen(cacheDir)
 }
 
-// EnableDebug enables debug logging which uses the logrus module
-func (i *Irdata) EnableDebug() {
-	log.SetLevel(log.DebugLevel)
-}
-
-// DisableDebug disables debug logging
-func (i *Irdata) DisableDebug() {
-	log.SetLevel(log.ErrorLevel)
-}
-
 // SetLogLevel sets the loging level using the logrus module
 func (i *Irdata) SetLogLevel(logLevel LogLevel) {
 	switch logLevel {
@@ -139,11 +153,21 @@ func (i *Irdata) SetLogLevel(logLevel LogLevel) {
 	}
 }
 
+// SetRateLimitHandler sets the desired behavior for handling API rate limits.
+// The default is RateLimitError.
+func (i *Irdata) SetRateLimitHandler(handler RateLimitHandler) {
+	i.rateLimitHandler = handler
+}
+
+// SetRetries sets the number of times a get will be retried if a retriable error
+// is encountered (e.g. a 5xx)
+func (i *Irdata) SetRetries(retries int) {
+	i.getRetries = retries
+}
+
 // Get returns the result value for the uri provided (e.g. "/data/member/info")
 //
 // The value returned is a JSON byte array and a potential error.
-//
-// Get will automatically retry 5 times if iRacing returns 500 errors
 func (i *Irdata) Get(uri string) ([]byte, error) {
 	if !i.isAuthed {
 		return nil, makeErrorf("must auth first")
@@ -170,46 +194,40 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 		return nil, err
 	}
 
+	// If the response is not 200 OK, it's likely not the JSON we expect.
+	if resp.StatusCode != http.StatusOK {
+		return nil, makeErrorf("received non-200 status code: %d - body: %s", resp.StatusCode, string(data))
+	}
+
+	// First, try to unmarshal as an S3 link object
 	var s3Link s3LinkT
-
-	log.WithFields(log.Fields{"url": url}).Debug("Unmarshalling")
-
-	err = json.Unmarshal(data, &s3Link)
-
-	// there's a link
-	if err == nil && s3Link.Link != "" {
+	if json.Unmarshal(data, &s3Link) == nil && s3Link.Link != "" {
 		log.WithFields(log.Fields{"s3Link.Link": s3Link.Link}).Debug("Following s3link")
-
 		s3Resp, err := i.retryingGet(s3Link.Link)
 		if err != nil {
 			return nil, err
 		}
-
 		defer s3Resp.Body.Close()
-
 		data, err = io.ReadAll(s3Resp.Body)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		// there's no link, check for data url
+		// If not an S3 link, try to unmarshal as a data URL object
 		var dataUrl dataUrlT
-
-		err = json.Unmarshal(data, &dataUrl)
-
-		if err == nil && dataUrl.Data_Url != "" {
-			log.WithFields(log.Fields{"dataUrl.Data_Url": dataUrl.Data_Url}).Debug("Following dataUrl")
-
-			dataUrlResp, err := i.retryingGet(dataUrl.Data_Url)
+		if json.Unmarshal(data, &dataUrl) == nil && dataUrl.DataURL != "" {
+			log.WithFields(log.Fields{"dataUrl.Data_Url": dataUrl.DataURL}).Debug("Following dataUrl")
+			dataUrlResp, err := i.retryingGet(dataUrl.DataURL)
 			if err != nil {
 				return nil, err
 			}
-
+			defer dataUrlResp.Body.Close()
 			data, err = io.ReadAll(dataUrlResp.Body)
 			if err != nil {
 				return nil, err
 			}
 		}
+		// If neither of the above, we assume the original 'data' is the final response.
 	}
 
 	// quick check for chunk info
@@ -352,30 +370,106 @@ func (i *Irdata) GetWithCache(uri string, ttl time.Duration) ([]byte, error) {
 	return data, nil
 }
 
-func (i *Irdata) retryingGet(url string) (resp *http.Response, err error) {
-	retries := 5
+// updateRateLimit parses rate limit headers and updates the internal state.
+func (i *Irdata) updateRateLimit(resp *http.Response) {
+	i.rateLimitMu.Lock()
+	defer i.rateLimitMu.Unlock()
 
-	for retries > 0 {
+	if remaining := resp.Header.Get("x-ratelimit-remaining"); remaining != "" {
+		if val, err := strconv.Atoi(remaining); err == nil {
+			i.rateLimitRemaining = val
+		}
+	}
+
+	if reset := resp.Header.Get("x-ratelimit-reset"); reset != "" {
+		if val, err := strconv.ParseInt(reset, 10, 64); err == nil {
+			i.rateLimitReset = time.Unix(val, 0)
+		}
+	}
+
+	log.WithFields(log.Fields{
+		"remaining": i.rateLimitRemaining,
+		"reset":     i.rateLimitReset,
+	}).Debug("Updated rate limit state")
+}
+
+func (i *Irdata) retryingGet(url string) (resp *http.Response, err error) {
+	// Proactive rate limit check
+	i.rateLimitMu.Lock()
+	if i.rateLimitRemaining <= 0 && time.Now().Before(i.rateLimitReset) {
+		resetTime := i.rateLimitReset
+		handler := i.rateLimitHandler
+		i.rateLimitMu.Unlock() // Unlock before potentially waiting
+
+		log.WithFields(log.Fields{
+			"reset":   resetTime,
+			"handler": handler,
+		}).Warn("Rate limit reached proactively")
+
+		if handler == RateLimitError {
+			return nil, &RateLimitExceededError{ResetTime: resetTime}
+		}
+
+		// RateLimitWait
+		waitUntil := time.Until(resetTime)
+		log.WithFields(log.Fields{"wait": waitUntil}).Info("Waiting for rate limit reset")
+		time.Sleep(waitUntil)
+	} else {
+		i.rateLimitMu.Unlock()
+	}
+
+	attempts := i.getRetries + 1
+
+	for attempts > 0 {
 		log.WithFields(log.Fields{
 			"url":     url,
-			"retries": retries,
+			"retries": attempts - 1,
 		}).Info("httpClient.Get")
 
 		resp, err = i.httpClient.Get(url)
+		if err != nil {
+			// If there's a network error etc., we should probably just fail.
+			return nil, err
+		}
 
-		if resp.StatusCode < 500 {
+		// Always update rate limit state from headers on any response
+		i.updateRateLimit(resp)
+
+		// Handle 429 Too Many Requests (Rate Limit)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			if i.rateLimitHandler == RateLimitError {
+				i.rateLimitMu.Lock()
+				resetTime := i.rateLimitReset
+				i.rateLimitMu.Unlock()
+				return nil, &RateLimitExceededError{ResetTime: resetTime}
+			}
+
+			// RateLimitWait: sleep until the reset time and retry the loop
+			i.rateLimitMu.Lock()
+			resetTime := i.rateLimitReset
+			i.rateLimitMu.Unlock()
+			waitUntil := time.Until(resetTime)
+			if waitUntil < 0 {
+				waitUntil = 0 // Don't sleep if reset time is in the past
+			}
+			log.WithFields(log.Fields{"wait": waitUntil}).Info("Waiting for rate limit reset after 429")
+			time.Sleep(waitUntil)
+			continue // retry the request
+		} else if resp.StatusCode < 500 {
+			// This is a success or a non-retriable client error, break the loop
 			break
 		}
 
-		retries--
+		// This section is for 5xx errors
+		attempts--
 
-		backoff := time.Duration((6-retries)*5) * time.Second
+		backoff := time.Duration((i.getRetries-attempts)*5) * time.Second
 
 		log.WithFields(log.Fields{
 			"url":             url,
 			"resp.StatusCode": resp.StatusCode,
 			"backoff":         backoff,
-		}).Warn("*** Retrying")
+		}).Warn("*** Retrying 5xx error")
 
 		time.Sleep(backoff)
 	}

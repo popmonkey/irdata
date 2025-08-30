@@ -1,149 +1,292 @@
 # irdata
-Golang module to simplify access to the iRacing /data API from go
 
-## Setup
+A Go module for simplified access to the iRacing `/data` API.
+
+## Features
+
+* **Simplified Authentication**: Handles credential management
+* **Transparent Data Fetching**: Follows and dereferences iRacing's S3 links transparently
+* **Automatic Chunk Merging**: If an endpoint returns chunked data, `irdata` fetches all chunks and merges them into a single object.
+* **Caching Layer**: An optional disk-based cache to minimize API calls
+* **Resiliency**: Built-in support for automatic retries on server errors (`5xx`) and configurable handling for rate limits (`429`).
+
+## Installation
 
 ```sh
 go get github.com/popmonkey/irdata
 ```
 
+## Quick Start
+
+The following is a complete example of setting up the client, authenticating, and fetching data with caching enabled.
+
 ```go
-api := irdata.Open(context.Background)
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "log"
+    "time"
+
+    "github.com/popmonkey/irdata"
+)
+
+func main() {
+    // Create a new client instance.
+    api := irdata.Open(context.Background())
+    defer api.Close()
+
+    // Authenticate using credentials stored in a file.
+    err := api.AuthWithCredsFromFile("path/to/my.key", "path/to/my.creds")
+    if err != nil {
+        log.Fatalf("Authentication failed: %v", err)
+    }
+    
+    // Enable the cache
+    if err := api.EnableCache(".ir-cache"); err != nil {
+        log.Fatalf("Failed to enable cache: %v", err)
+    }
+
+    // Fetch data from an API endpoint (member info for these creds)
+    jsonData, err := api.GetWithCache("/data/member/info", 15*time.Minute)
+    if err != nil {
+        log.Fatalf("Failed to get member info: %v", err)
+    }
+
+    // Unmarshal the JSON response into a struct.
+    var memberInfo struct {
+        DisplayName string `json:"display_name"`
+        CustomerID  int    `json:"cust_id"`
+    }
+
+    if err := json.Unmarshal(jsonData, &memberInfo); err != nil {
+        log.Fatalf("Failed to parse JSON: %v", err)
+    }
+
+    fmt.Printf("Successfully fetched data for %s (Customer ID: %d)\n",
+        memberInfo.DisplayName, memberInfo.CustomerID)
+}
 ```
+
+---
 
 ## Authentication
 
-You can use the provided utility function to request creds from the terminal:
+The library provides several ways to manage iRacing credentials.
 
-```go
-var credsProvider irdata.CredsFromTerminal
+### Encrypted Credential File (Recommended)
 
-api.AuthWithProvideCreds(credsProvider.GetCreds)
-```
+You can store credentials in a file encrypted with a key file. First, generate a key file.
 
-You can specify the username, password yourself:
-
-```go
-var myCreds struct{}
-
-func (myCreds) GetCreds() {
-    return []byte("prost"), []byte("senna")
-}
-
-api.AuthWithProvidedCreds(myCreds)
-```
-
-You can also store your credentials in a file encrypted using a keyfile:
-
-```go
-var credsProvider irdata.CredsFromTerminal
-
-api.AuthAndSaveProvidedCredsToFile(keyFn, credsFn, credsProvider)
-```
-
-After you have a creds file you can load these into your session like so:
-
-```go
-api.AuthWithCredsFromFile(keyFn, credsFn)
-```
-
-### Creating and protecting the keyfile
-
-For the key file, you need to create a random string of 16, 24, or 32
-bytes and base64 encode it into a file.  The file must be set to read only by
-user (`0400`) and it is recommended this lives someplace safe.
-
-Example key file creation in Linux or OS X:
+#### Create the Key File
+The key must be a random string of 16, 24, or 32 bytes, base64 encoded, and stored in a file with user-only read permissions (`0400`).
 
 ```sh
+# Example for Linux or macOS
 openssl rand -base64 32 > ~/my.key && chmod 0400 ~/my.key
 ```
 
 > [!WARNING]
-> Don't check your keys into git ;)
+> Do not commit your key file or credentials file to version control.
 
-## Accessing the /data API
-
-Once authenticated, you can query the API by URI, for example:
+#### Save and Load Credentials
+Use the key file to save your credentials once, then load them for all subsequent sessions.
 
 ```go
+// Define file paths for the key and encrypted credentials
+keyFile := "my.key"
+credsFile := "my.creds"
+
+// First-time setup to save credentials from terminal input
+var credsProvider irdata.CredsFromTerminal
+err := api.AuthAndSaveProvidedCredsToFile(keyFile, credsFile, credsProvider)
+if err != nil {
+    log.Fatalf("Failed to save credentials: %v", err)
+}
+
+// In subsequent runs, you can authenticate directly from the file
+err = api.AuthWithCredsFromFile(keyFile, credsFile)
+if err != nil {
+    log.Fatalf("Failed to auth from file: %v", err)
+}
+```
+
+### Programmatic Credentials
+
+You can provide credentials directly in your code by implementing the `CredsProvider` interface.
+
+```go
+type MyCredsProvider struct{}
+
+func (p MyCredsProvider) GetCreds() ([]byte, []byte, error) {
+    username := "your_email@example.com"
+    password := "your_password"
+    return []byte(username), []byte(password), nil
+}
+
+var provider MyCredsProvider
+err := api.AuthWithProvideCreds(provider)
+if err != nil {
+    log.Fatalf("Auth failed: %v", err)
+}
+```
+
+### Terminal Prompt
+
+To prompt for credentials from the terminal interactively:
+```go
+var provider irdata.CredsFromTerminal
+err := api.AuthWithProvideCreds(provider)
+if err != nil {
+    log.Fatalf("Auth failed: %v", err)
+}
+```
+---
+
+## API Usage
+
+Once authenticated, use `Get()` or `GetWithCache()` to access API endpoints.
+
+### Basic Fetch
+
+`Get()` retrieves data directly from the iRacing API.
+
+```go
+// Get member info
+data, err := api.Get("/data/member/info")
+if err != nil {
+    // handle error
+}
+// Unmarshal and use data...
+```
+
+### Cached Fetch
+
+The iRacing API has a rate limit. Using the cache is highly recommended to avoid interruptions.
+
+First, enable the cache. This should only be done once.
+```go
+err := api.EnableCache(".cache")
+if err != nil {
+    // handle error
+}
+```
+
+Then use `GetWithCache()` which first checks the cache for the requested data. On a cache hit, it returns the cached data immediately. On a cache miss, it calls the main API, returns the result, and populates the cache with the new data for the specified time-to-live (TTL) duration.
+
+```go
+// This call will hit the iRacing API only if the data is not in the cache
+// or if the cached data is older than 15 minutes.
+data, err := api.GetWithCache("/data/member/info", 15*time.Minute)
+```
+
+---
+
+## Handling Chunked Responses
+
+Some API endpoints (e.g., `/data/results/search_series`) return large datasets in chunks. `irdata` automatically detects this, fetches all chunks, and merges the results into a new `_chunk_data` field in the JSON response.
+
+For a response that originally contains a `chunk_info` block, `irdata` adds the `_chunk_data` array containing the merged content from all chunks.
+
+```json
+{
+  "some_other_data": "value",
+  "chunk_info": {
+    "num_chunks": 2,
+    "base_download_url": "...",
+    "chunk_file_names": ["chunk_0.json", "chunk_1.json"]
+  },
+  "_chunk_data": [
+    { "result_id": 1 },
+    { "result_id": 2 }
+  ]
+}
+```
+
+---
+
+## Error Handling
+
+### Rate Limit Management
+
+`irdata` can handle rate limits in two ways. You can change the behavior with `SetRateLimitHandler()`.
+
+#### Return an Error (Default)
+
+By default, `Get()` or `GetWithCache()` will return an `irdata.RateLimitExceededError` if the rate limit is hit. You can check for this specific error to handle it gracefully.  This error includes a timestamp value which is the reset time after which iRacing will no longer rate limit you.
+
+```go
+import "errors"
+// ...
+
+data, err := api.Get("/data/member/info")
+if err != nil {
+    var rateLimitErr *irdata.RateLimitExceededError
+    if errors.As(err, &rateLimitErr) {
+        fmt.Printf("Rate limit exceeded. Please wait until %v to retry.\n", rateLimitErr.ResetTime)
+    } else {
+        // Handle other errors
+        log.Fatal(err)
+    }
+}
+```
+
+#### Wait and Continue
+
+Alternatively, configure `irdata` to pause and automatically retry the request after the rate limit resets. In this mode, the call will block until it succeeds.
+
+```go
+api.SetRateLimitHandler(irdata.RateLimitWait)
+
+// This call will now block and wait if the rate limit is hit
+// instead of returning an error.
 data, err := api.Get("/data/member/info")
 ```
 
-If successful, this returns a `[]byte` array containing the JSON response.  See
-[the profile example](examples/profile/profile.go) for some json handling logic.
+### Automatic Retries
 
-The API is lightly documented via the /data API itself.  Check out the
-[latest version](https://github.com/popmonkey/iracing-data-api-doc/blob/main/doc.json)
-and
-[track changes](https://github.com/popmonkey/iracing-data-api-doc/commits/main/doc.json)
-to it.
-
-## Using the cache
-
-The iRacing /data API imposes a rate limit which can become problematic especially when
-running your program over and over such as during development.
-
-irdata therefore provides a caching layer which you can use to avoid making calls to the
-actual iRacing API.
+For server-side errors (HTTP `5xx` status codes), `irdata` will automatically retry the request with an increasing backoff period. You can configure the number of retries.  The default is 0 (no retries):
 
 ```go
-api.EnableCache(".cache")
-
-data, err := api.GetWithCache("/data/member/info", time.Duration(15)*time.Minute)
+// Set the number of retries to 10
+api.SetRetries(10)
 ```
 
-Subsequent calls to the same URI (with same parameters) over the next 15 minutes will return
-`data` from the local cache before calling the iRacing /data API again.
+---
 
-## Chunked responses
+## Logging
 
-Some iRacing data APIs returns data in chunks (e.g. `/data/results/search_series`).  When `irdata`
-detects this it will fetch each chunk and then merge the results into an object array.  This object
-array can be found in the new value `_chunk_data` which will be present where the `chunk_info` block
-was found.
-
-## Debugging
-
-You can turn on verbose logging in order to debug your sessions.  This will use the `logrus`
-module to write to `stderr`.
+`irdata` uses `logrus` for logging. By default, only errors are logged but more detailed logging can be enabled.
 
 ```go
-api.EnableDebug()
+api.SetLogLevel(irdata.LogLevelInfo)
 ```
+
+---
 
 ## Development
 
+Clone the repository:
 ```sh
 git clone git@github.com:popmonkey/irdata.git
 ```
 
 > [!NOTE]
-> Keyfiles must have permissions set to 0400.  The example and test keys that are checked into
-> this repository need to be adjust after cloning/pulling
+> Key files included in the repository for testing must have their permissions set to `0400`.
 > ```sh
-> chmod 0400 example/example.key testdata/test.key
+> chmod 0400 testdata/test.key
 > ```
 
 Run tests:
-
 ```sh
+# Run standard tests (no API calls)
 go test
-```
 
-These tests run without actually reaching out to the API.  To run the complete gamut of tests
-you need to specify an existing key and creds file (such as those created in the examples) by
-setting environment variables `IRDATA_TEST_KEY` to point to the keyfile and `IRDATA_TEST_CREDS`
-to point to the creds file encrypted by the key:
-
-```sh
-IRDATA_TEST_KEY=/path/to/key IRDATA_TEST_CREDS=/path/to/creds go test
-```
-
-Run examples:
-
-```sh
-pushd examples/profile
-go run profile.go
-popd
+# Run integration tests against the live iRacing API
+# Requires valid key and creds files created beforehand
+IRDATA_TEST_KEY=/path/to/key.file \
+IRDATA_TEST_CREDS=/path/to/creds.file \
+go test
 ```
