@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    paths:
+      - '**.go'
+      - '**.mod'
+  pull_request:
+    paths:
+      - '**.go'
+      - '**.mod'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Run Tests
+        run: go test ./...
