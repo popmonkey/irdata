@@ -19,9 +19,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -50,10 +50,11 @@ func (e *RateLimitExceededError) Error() string {
 }
 
 type Irdata struct {
-	httpClient http.Client
-	isAuthed   bool
-	cask       *bitcask.Bitcask
-	getRetries int
+	httpClient  http.Client
+	isAuthed    bool
+	AccessToken string
+	cask        *bitcask.Bitcask
+	getRetries  int
 
 	// Rate limiting fields
 	rateLimitHandler   RateLimitHandler
@@ -101,13 +102,7 @@ func init() {
 }
 
 func Open(ctx context.Context) *Irdata {
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		log.Panic(err)
-	}
-
 	client := http.Client{
-		Jar: jar,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -424,9 +419,22 @@ func (i *Irdata) retryingGet(url string) (resp *http.Response, err error) {
 		log.WithFields(log.Fields{
 			"url":     url,
 			"retries": attempts - 1,
-		}).Info("httpClient.Get")
+		}).Info("httpClient.Do")
 
-		resp, err = i.httpClient.Get(url)
+		// Create a new request so we can set the Header
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		// *** OAUTH HEADER LOGIC ***
+		// 1. Check if we have an Access Token
+		// 2. Check if the domain is iRacing (Do NOT send headers to S3, they will reject it)
+		if i.AccessToken != "" && strings.Contains(url, "iracing.com") {
+			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", i.AccessToken))
+		}
+
+		resp, err = i.httpClient.Do(req)
 		if err != nil {
 			// If there's a network error etc., we should probably just fail.
 			return nil, err

@@ -12,7 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var testUsername, testPassword = []byte("louis"), []byte("ferrari")
+var testUsername, testPassword = []byte("louis@ferrari.com"), []byte("red4life")
+var testClientID, testClientSecret = []byte("ferrari"), []byte("we-are-faster")
 
 var testCredsFilename = filepath.Join("testdata", "test.creds")
 var testKeyFilename = filepath.Join("testdata", "test.key")
@@ -21,8 +22,8 @@ var testAuthDir = filepath.Join(os.TempDir(), "irdata-auth")
 
 type testCreds struct{}
 
-func (testCreds) GetCreds() ([]byte, []byte) {
-	return testUsername, testPassword
+func (testCreds) GetCreds() ([]byte, []byte, []byte, []byte, error) {
+	return testUsername, testPassword, testClientID, testClientSecret, nil
 }
 
 func setupAuthTest() {
@@ -35,44 +36,39 @@ func cleanupAuthTest() {
 
 func TestNonce(t *testing.T) {
 	key, err := getKey(testKeyFilename)
-
 	assert.NoError(t, err)
 
 	block, err := aes.NewCipher(key)
-
 	assert.NoError(t, err)
 
 	gcm, err := cipher.NewGCM(block)
-
 	assert.NoError(t, err)
 
 	nonce1, err := makeNonce(gcm)
-
 	assert.NoError(t, err)
 
 	// size
 	assert.Equal(t, len(nonce1), gcm.NonceSize())
 
 	nonce2, err := makeNonce(gcm)
-
 	assert.NoError(t, err)
 
 	// is random
 	assert.False(t, bytes.Equal(nonce1, nonce2))
 }
 
-func TestEncodePassword(t *testing.T) {
-	encodedPasswordExpected := "nKb060s95vcF0RpjfkGKapQG1o0AgbaPz10/H6QpHn4="
+func TestMaskSecret(t *testing.T) {
+	encodedPasswordExpected := "K3j4XfB2QoZYXLJH9eo5ZY2aC2fJ16MVwt7DD2uZJtw="
 
-	encodedPasswordActual, err := encodePassword(testUsername, testPassword)
+	maskedPasswordActual, err := maskSecret(string(testPassword), string(testUsername))
 
 	assert.NoError(t, err)
 
 	// verify it can be decoded
-	_, err = base64.StdEncoding.Strict().DecodeString(encodedPasswordActual)
+	_, err = base64.StdEncoding.Strict().DecodeString(maskedPasswordActual)
 
 	assert.NoError(t, err)
-	assert.Equal(t, encodedPasswordExpected, encodedPasswordActual)
+	assert.Equal(t, encodedPasswordExpected, maskedPasswordActual)
 }
 
 func TestShredKey(t *testing.T) {
@@ -92,7 +88,6 @@ func TestShredKey(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		assert.NotEqual(t, expectedKey[i], testKey[i])
 	}
-
 }
 
 func TestGetCreds(t *testing.T) {
@@ -101,12 +96,14 @@ func TestGetCreds(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t, string(testUsername), auth.Username)
+	assert.Equal(t, string(testClientID), auth.ClientID)
+	assert.Equal(t, string(testClientSecret), auth.ClientSecret)
 
-	encodedPassword, err := encodePassword(testUsername, testPassword)
+	maskedPassword, err := maskSecret(string(testPassword), string(testUsername))
 
 	assert.NoError(t, err)
 
-	assert.Equal(t, encodedPassword, auth.EncodedPassword)
+	assert.Equal(t, maskedPassword, auth.MaskedPassword)
 }
 
 func TestWriteCreds(t *testing.T) {
@@ -114,15 +111,16 @@ func TestWriteCreds(t *testing.T) {
 
 	// use the CredsProvider interface just to make sure it is properly defined
 	var creds testCreds
-	username, password := creds.GetCreds()
+	username, password, clientID, clientSecret, _ := creds.GetCreds()
 
-	encodedPassword, err := encodePassword(username, password)
-
+	maskedPassword, err := maskSecret(string(password), string(username))
 	assert.NoError(t, err)
 
 	authDataExpected := &authDataT{
-		Username:        string(username),
-		EncodedPassword: encodedPassword,
+		Username:       string(username),
+		MaskedPassword: maskedPassword,
+		ClientID:       string(clientID),
+		ClientSecret:   string(clientSecret),
 	}
 
 	t.Cleanup(cleanupAuthTest)
@@ -136,5 +134,7 @@ func TestWriteCreds(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t, authDataExpected.Username, authDataActual.Username)
-	assert.Equal(t, authDataExpected.EncodedPassword, authDataActual.EncodedPassword)
+	assert.Equal(t, authDataExpected.MaskedPassword, authDataActual.MaskedPassword)
+	assert.Equal(t, authDataExpected.ClientID, authDataActual.ClientID)
+	assert.Equal(t, authDataExpected.ClientSecret, authDataActual.ClientSecret)
 }

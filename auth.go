@@ -8,9 +8,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/gob"
+	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -18,12 +19,23 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const loginURL = "https://members-ng.iracing.com/auth"
+const tokenURL = "https://oauth.iracing.com/oauth2/token"
 const testUrl = "https://members-ng.iracing.com/data/constants/event_types"
 
 type authDataT struct {
-	Username        string
-	EncodedPassword string
+	Username       string
+	MaskedPassword string
+	ClientID       string
+	ClientSecret   string
+}
+
+// TokenResponse maps the JSON response from the /token endpoint
+type TokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int    `json:"expires_in"`
+	RefreshToken string `json:"refresh_token"`
+	Scope        string `json:"scope"`
 }
 
 var additionalContext = []byte("irdata.auth")
@@ -39,19 +51,22 @@ func (i *Irdata) AuthWithCredsFromFile(keyFilename string, authFilename string) 
 	return i.auth(authData)
 }
 
-// AuthWithProvideCreds calls the provided function for the username and password
+// AuthWithProvideCreds calls the provided function for the credentials
 func (i *Irdata) AuthWithProvideCreds(authSource CredsProvider) error {
 	log.WithFields(log.Fields{"authSource": authSource}).Debug("Calling CredsProvider")
 
-	username, password, err := authSource.GetCreds()
+	username, password, clientID, clientSecret, err := authSource.GetCreds()
 	if err != nil {
 		return err
 	}
 
 	var authData authDataT
-
 	authData.Username = string(username)
-	authData.EncodedPassword, err = encodePassword(username, password)
+	authData.ClientID = string(clientID)
+	authData.ClientSecret = string(clientSecret)
+
+	// Mask the password immediately for storage/usage
+	authData.MaskedPassword, err = maskSecret(string(password), string(username))
 	if err != nil {
 		return err
 	}
@@ -60,8 +75,7 @@ func (i *Irdata) AuthWithProvideCreds(authSource CredsProvider) error {
 }
 
 // AuthAndSaveProvidedCredsToFile calls the provided function for the
-// username and password, verifies auth, and then saves these credentials to
-// authFilename using the key in  keyFilename
+// credentials, verifies auth, and then saves them to authFilename using the key in keyFilename
 func (i *Irdata) AuthAndSaveProvidedCredsToFile(keyFilename string, authFilename string, authSource CredsProvider) error {
 	log.WithFields(log.Fields{"authSource": authSource}).Debug("Calling CredsProvider")
 
@@ -71,24 +85,29 @@ func (i *Irdata) AuthAndSaveProvidedCredsToFile(keyFilename string, authFilename
 		return err
 	}
 
-	username, password, err := authSource.GetCreds()
+	username, password, clientID, clientSecret, err := authSource.GetCreds()
 	if err != nil {
 		return err
 	}
 
 	var authData authDataT
-
 	authData.Username = string(username)
-	authData.EncodedPassword, err = encodePassword(username, password)
+	authData.ClientID = string(clientID)
+	authData.ClientSecret = string(clientSecret)
+
+	// Mask password
+	authData.MaskedPassword, err = maskSecret(string(password), string(username))
 	if err != nil {
 		return err
 	}
 
+	// Authenticate first to verify creds are good
 	err = i.auth(authData)
 	if err != nil {
 		return err
 	}
 
+	// Save to disk if auth succeeded
 	return writeCreds(keyFilename, authFilename, authData)
 }
 
@@ -192,49 +211,71 @@ func readCreds(keyFilename string, authFilename string) (authDataT, error) {
 		return authData, makeErrorf("unable to gob decode [%v]", err)
 	}
 
+	// Detect legacy credentials (missing ClientID or Secret)
+	// Because gob ignores unknown fields, decoding an old file into the new struct
+	// will leave these fields empty.
+	if authData.ClientID == "" || authData.ClientSecret == "" {
+		return authData, makeErrorf("credentials file '%s' is in a legacy format (missing Client ID/Secret). Please delete it and re-authenticate.", authFilename)
+	}
+
 	return authData, nil
 }
 
-// auth client
+// auth client using Password Limited Flow
 func (i *Irdata) auth(authData authDataT) error {
 	if i.isAuthed {
 		return nil
 	}
 
-	if authData.EncodedPassword == "" {
-		return makeErrorf("must provide credentials before calling")
+	if authData.MaskedPassword == "" || authData.ClientID == "" || authData.ClientSecret == "" {
+		return makeErrorf("missing credentials (password, client_id, or client_secret)")
 	}
 
-	log.Info("Authenticating")
+	log.Info("Authenticating via OAuth2 Password Limited Flow")
+
+	// Mask the client secret for transmission
+	maskedClientSecret, err := maskSecret(authData.ClientSecret, authData.ClientID)
+	if err != nil {
+		return makeErrorf("failed to mask client secret: %v", err)
+	}
+
+	// Build Form Data
+	formData := url.Values{}
+	formData.Set("grant_type", "password_limited")
+	formData.Set("client_id", authData.ClientID)
+	formData.Set("client_secret", maskedClientSecret)
+	formData.Set("username", authData.Username)
+	formData.Set("password", authData.MaskedPassword)
+	// Request the specific scope required for the API
+	formData.Set("scope", "iracing.auth")
 
 	retries := 5
-
-	var err error
 	var resp *http.Response
 
 	for retries > 0 {
-		resp, err = i.httpClient.Post(loginURL, "application/json",
-			strings.NewReader(
-				fmt.Sprintf("{\"email\": \"%s\" ,\"password\": \"%s\"}", authData.Username, authData.EncodedPassword),
-			),
-		)
+		resp, err = i.httpClient.PostForm(tokenURL, formData)
 
-		if resp.StatusCode < 500 {
+		// 429 Too Many Requests or 5xx Server Errors -> Retry
+		// 400/401 -> Do not retry, usually config error
+		if err == nil && resp.StatusCode < 500 && resp.StatusCode != 429 {
 			break
 		}
 
 		retries--
-
 		backoff := time.Duration((6-retries)*5) * time.Second
-
-		log.WithFields(log.Fields{"resp.StatusCode": resp.StatusCode, "backoff": backoff}).Warn(" *** Retrying Authentication due to error")
+		status := "error"
+		if resp != nil {
+			status = resp.Status
+		}
+		log.WithFields(log.Fields{"status": status, "backoff": backoff}).Warn(" *** Retrying Authentication")
 
 		time.Sleep(backoff)
 	}
 
 	if err != nil {
-		return makeErrorf("post to login failed %v", err)
+		return makeErrorf("post to token endpoint failed %v", err)
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		log.WithFields(log.Fields{
@@ -245,45 +286,34 @@ func (i *Irdata) auth(authData authDataT) error {
 		return makeErrorf("unexpected auth failure [%v]", resp.Status)
 	}
 
-	// test we are really auth'ed
-	resp, err = i.retryingGet(testUrl)
-	if err != nil {
-		return err
+	// Parse the JSON response
+	var tokenResp TokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return makeErrorf("failed to decode token response: %v", err)
 	}
 
-	if resp.StatusCode != 200 {
-		if resp.StatusCode == 401 {
-			return makeErrorf("login failed, check creds")
-		} else {
-			log.WithFields(log.Fields{
-				"resp.Status":     resp.Status,
-				"resp.StatusCode": resp.StatusCode,
-				"testUrl":         testUrl,
-			}).Warn("Unexpected status")
+	log.WithFields(log.Fields{"scope": tokenResp.Scope}).Info("Login succeeded")
 
-			return makeErrorf("unexpected auth failure %v", resp.Status)
-		}
-	}
-
-	log.Info("Login succeeded")
-
+	// Store the token!
+	i.AccessToken = tokenResp.AccessToken
 	i.isAuthed = true
 
 	return nil
 }
 
 // See: https://forums.iracing.com/discussion/22109/login-form-changes/p1
-func encodePassword(username []byte, password []byte) (string, error) {
+func maskSecret(secret string, id string) (string, error) {
 	hasher := sha256.New()
 
-	_, err := hasher.Write(password)
+	// "The normalized id is concatenated onto the secret with no separator."
+	_, err := hasher.Write([]byte(secret))
 	if err != nil {
-		return "", makeErrorf("unable to hash password to sha256 [%v]", err)
+		return "", makeErrorf("unable to hash secret [%v]", err)
 	}
 
-	_, err = hasher.Write([]byte(strings.ToLower(string(username))))
+	_, err = hasher.Write([]byte(strings.ToLower(id)))
 	if err != nil {
-		return "", makeErrorf("unable to hash username to sha256 [%v]", err)
+		return "", makeErrorf("unable to hash id [%v]", err)
 	}
 
 	return base64.StdEncoding.Strict().EncodeToString(hasher.Sum(nil)), nil
@@ -292,9 +322,7 @@ func encodePassword(username []byte, password []byte) (string, error) {
 // nonce generator
 func makeNonce(gcm cipher.AEAD) ([]byte, error) {
 	nonce := make([]byte, gcm.NonceSize())
-
 	_, err := rand.Read(nonce)
-
 	return nonce, err
 }
 

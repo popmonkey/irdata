@@ -4,10 +4,11 @@ A Go module for simplified access to the iRacing `/data` API.
 
 ## Features
 
-* **Simplified Authentication**: Handles credential management
-* **Transparent Data Fetching**: Follows and dereferences iRacing's S3 links transparently
+* **Modern Authentication**: Supports iRacing's **OAuth2 Password Limited Flow**
+* **Simplified Management**: Handles token acquisition, masking, and credential encryption locally.
+* **Transparent Data Fetching**: Follows and dereferences iRacing's S3 links transparently.
 * **Automatic Chunk Merging**: If an endpoint returns chunked data, `irdata` fetches all chunks and merges them into a single object.
-* **Caching Layer**: An optional disk-based cache to minimize API calls
+* **Caching Layer**: An optional disk-based cache to minimize API calls.
 * **Resiliency**: Built-in support for automatic retries on server errors (`5xx`) and configurable handling for rate limits (`429`).
 
 ## Installation
@@ -74,7 +75,10 @@ func main() {
 
 ## Authentication
 
-The library provides several ways to manage iRacing credentials.
+The library uses the **OAuth2 Password Limited Flow**. This requires you to register your "headless" client with iRacing support to obtain a **Client ID** and **Client Secret**, in addition to your standard iRacing username and password.
+
+> [!IMPORTANT]
+> **Migration Note:** If you used previous versions of `irdata`, your existing `.creds` files are incompatible. You must delete them and regenerate them using the new flow to include your Client ID and Secret.
 
 ### Encrypted Credential File (Recommended)
 
@@ -92,7 +96,7 @@ openssl rand -base64 32 > ~/my.key && chmod 0400 ~/my.key
 > Do not commit your key file or credentials file to version control.
 
 #### Save and Load Credentials
-Use the key file to save your credentials once, then load them for all subsequent sessions.
+Use the key file to save your credentials once. The helper `CredsFromTerminal` will prompt you for your Username, Password, Client ID, and Client Secret.
 
 ```go
 // Define file paths for the key and encrypted credentials
@@ -120,10 +124,13 @@ You can provide credentials directly in your code by implementing the `CredsProv
 ```go
 type MyCredsProvider struct{}
 
-func (p MyCredsProvider) GetCreds() ([]byte, []byte, error) {
+func (p MyCredsProvider) GetCreds() ([]byte, []byte, []byte, []byte, error) {
     username := "your_email@example.com"
     password := "your_password"
-    return []byte(username), []byte(password), nil
+    clientId := "your_client_id"
+    clientSecret := "your_client_secret"
+    
+    return []byte(username), []byte(password), []byte(clientId), []byte(clientSecret), nil
 }
 
 var provider MyCredsProvider
