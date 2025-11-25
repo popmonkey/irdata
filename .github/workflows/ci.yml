@@ -24,4 +24,5 @@ jobs:
           go-version: '1.22'
 
       - name: Run Tests
-        run: go test ./...
+        run: chmod 0400 testdata/test.key && 
+                go test ./...
