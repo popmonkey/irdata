@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write # Required to upload assets to the release
+
+jobs:
+  build-and-upload:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Ensure build directory exists
+        run: mkdir -p build
+
+      - name: Build Binaries
+        run: make all
+
+      - name: Upload Release Assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ github.event.release.tag_name }} \
+            build/irfetch-osx.zip \
+            build/irfetch-win386.zip \
+            build/irfetch-linux386.zip
