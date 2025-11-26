@@ -233,6 +233,10 @@ func (i *Irdata) auth(authData authDataT) error {
 
 	log.Info("Authenticating via OAuth2 Password Limited Flow")
 
+	// Store credentials in struct for future refreshes
+	i.ClientID = authData.ClientID
+	i.ClientSecret = authData.ClientSecret
+
 	// Mask the client secret for transmission
 	maskedClientSecret, err := maskSecret(authData.ClientSecret, authData.ClientID)
 	if err != nil {
@@ -294,10 +298,64 @@ func (i *Irdata) auth(authData authDataT) error {
 
 	log.WithFields(log.Fields{"scope": tokenResp.Scope}).Info("Login succeeded")
 
-	// Store the token!
+	// Store the token and refresh info
 	i.AccessToken = tokenResp.AccessToken
+	i.RefreshToken = tokenResp.RefreshToken
+	i.TokenExpiry = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
 	i.isAuthed = true
 
+	return nil
+}
+
+// refreshToken attempts to use the stored Refresh Token to get a new Access Token
+func (i *Irdata) refreshToken() error {
+	if i.RefreshToken == "" {
+		return makeErrorf("no refresh token available")
+	}
+
+	log.Info("Refreshing Access Token")
+
+	// Mask the client secret
+	maskedClientSecret, err := maskSecret(i.ClientSecret, i.ClientID)
+	if err != nil {
+		return makeErrorf("failed to mask client secret: %v", err)
+	}
+
+	// Build Form Data for Refresh
+	formData := url.Values{}
+	formData.Set("grant_type", "refresh_token")
+	formData.Set("client_id", i.ClientID)
+	formData.Set("client_secret", maskedClientSecret)
+	formData.Set("refresh_token", i.RefreshToken)
+
+	resp, err := i.httpClient.PostForm(tokenURL, formData)
+	if err != nil {
+		return makeErrorf("refresh request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		// If refresh fails, we might be totally de-authed
+		log.Warnf("Refresh failed with status: %s", resp.Status)
+		return makeErrorf("refresh failed [%v]", resp.Status)
+	}
+
+	var tokenResp TokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return makeErrorf("failed to decode refresh response: %v", err)
+	}
+
+	// Update state
+	i.AccessToken = tokenResp.AccessToken
+	i.TokenExpiry = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+
+	// iRacing *may* issue a new refresh token. If they do, update it.
+	// If they don't, keep the old one (if that's their policy), or it might be single-use.
+	if tokenResp.RefreshToken != "" {
+		i.RefreshToken = tokenResp.RefreshToken
+	}
+
+	log.Info("Token Refresh Successful")
 	return nil
 }
 

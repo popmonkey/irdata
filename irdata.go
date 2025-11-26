@@ -50,11 +50,17 @@ func (e *RateLimitExceededError) Error() string {
 }
 
 type Irdata struct {
-	httpClient  http.Client
-	isAuthed    bool
-	AccessToken string
-	cask        *bitcask.Bitcask
-	getRetries  int
+	httpClient http.Client
+	isAuthed   bool
+	cask       *bitcask.Bitcask
+	getRetries int
+
+	// Auth Data used for Refreshing
+	AccessToken  string
+	RefreshToken string
+	TokenExpiry  time.Time
+	ClientID     string
+	ClientSecret string
 
 	// Rate limiting fields
 	rateLimitHandler   RateLimitHandler
@@ -389,6 +395,16 @@ func (i *Irdata) updateRateLimit(resp *http.Response) {
 }
 
 func (i *Irdata) retryingGet(url string) (resp *http.Response, err error) {
+	// Proactive Token Refresh
+	// If we are authenticated and the token is within 1 minute of expiring, refresh it.
+	if i.isAuthed && !i.TokenExpiry.IsZero() && time.Now().Add(1*time.Minute).After(i.TokenExpiry) {
+		log.Info("Access token expiring soon, refreshing...")
+		if rErr := i.refreshToken(); rErr != nil {
+			log.WithFields(log.Fields{"err": rErr}).Warn("Failed to refresh token, proceeding with old token")
+			// We proceed; maybe the clock is wrong, or maybe we will get a 401 and fail then.
+		}
+	}
+
 	// Proactive rate limit check
 	i.rateLimitMu.Lock()
 	if i.rateLimitRemaining <= 0 && time.Now().Before(i.rateLimitReset) {
@@ -443,6 +459,24 @@ func (i *Irdata) retryingGet(url string) (resp *http.Response, err error) {
 		// Always update rate limit state from headers on any response
 		i.updateRateLimit(resp)
 
+		// Handle 401 Unauthorized (Expired Token)
+		// If we get a 401 and we haven't tried refreshing yet in this loop, try once.
+		if resp.StatusCode == http.StatusUnauthorized {
+			log.Warn("Received 401 Unauthorized. Attempting token refresh.")
+			// Attempt refresh
+			if rErr := i.refreshToken(); rErr == nil {
+				// Close the old body
+				resp.Body.Close()
+				// Retry the loop immediately without decrementing 'attempts' if you want infinite retries,
+				// or just continue and let the next loop iteration handle it (which decrements attempts).
+				// Here we just continue, effectively burning one retry attempt to do the refresh.
+				continue
+			} else {
+				log.WithError(rErr).Error("Token refresh failed during 401 handling.")
+				// If refresh failed, the 401 is likely permanent. Break/return.
+			}
+		}
+
 		// Handle 429 Too Many Requests (Rate Limit)
 		if resp.StatusCode == http.StatusTooManyRequests {
 			if i.rateLimitHandler == RateLimitError {
@@ -452,33 +486,28 @@ func (i *Irdata) retryingGet(url string) (resp *http.Response, err error) {
 				return nil, &RateLimitExceededError{ResetTime: resetTime}
 			}
 
-			// RateLimitWait: sleep until the reset time and retry the loop
 			i.rateLimitMu.Lock()
 			resetTime := i.rateLimitReset
 			i.rateLimitMu.Unlock()
 			waitUntil := time.Until(resetTime)
 			if waitUntil < 0 {
-				waitUntil = 0 // Don't sleep if reset time is in the past
+				waitUntil = 0
 			}
 			log.WithFields(log.Fields{"wait": waitUntil}).Info("Waiting for rate limit reset after 429")
 			time.Sleep(waitUntil)
-			continue // retry the request
+			continue
 		} else if resp.StatusCode < 500 {
 			// This is a success or a non-retriable client error, break the loop
 			break
 		}
 
-		// This section is for 5xx errors
 		attempts--
-
 		backoff := time.Duration((i.getRetries-attempts)*5) * time.Second
-
 		log.WithFields(log.Fields{
 			"url":             url,
 			"resp.StatusCode": resp.StatusCode,
 			"backoff":         backoff,
 		}).Warn("*** Retrying 5xx error")
-
 		time.Sleep(backoff)
 	}
 
