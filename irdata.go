@@ -467,9 +467,6 @@ func (i *Irdata) retryingGet(url string) (resp *http.Response, err error) {
 			if rErr := i.refreshToken(); rErr == nil {
 				// Close the old body
 				resp.Body.Close()
-				// Retry the loop immediately without decrementing 'attempts' if you want infinite retries,
-				// or just continue and let the next loop iteration handle it (which decrements attempts).
-				// Here we just continue, effectively burning one retry attempt to do the refresh.
 				continue
 			} else {
 				log.WithError(rErr).Error("Token refresh failed during 401 handling.")
