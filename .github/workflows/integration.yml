@@ -1,14 +1,16 @@
 name: Integration Tests
 
 on:
+  # Run on pushes to the main branch only
   push:
-    paths:
-      - '**.go'
-      - '**.mod'
-  pull_request:
-    paths:
-      - '**.go'
-      - '**.mod'
+    branches:
+      - main
+      
+  # Run nightly at 2:30 AM UTC
+  schedule:
+    - cron: '30 2 * * *'
+    
+  # Allow manual trigger from the Actions tab
   workflow_dispatch:
 
 jobs:
