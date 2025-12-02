@@ -6,9 +6,6 @@ on:
       - '**.go'
       - '**.mod'
   pull_request:
-    paths:
-      - '**.go'
-      - '**.mod'
   workflow_dispatch:
 
 jobs:
