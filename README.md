@@ -98,6 +98,21 @@ openssl rand -base64 32 > ~/my.key && chmod 0400 ~/my.key
 > [!WARNING]
 > Do not commit your key file or credentials file to version control.
 
+#### Using the `irfetch` utility (Recommended)
+
+The `irfetch` command-line utility is included with releases, or can be built from source with `make`. It is the easiest way to generate your credentials file.
+
+If the credentials file does not exist, `irfetch` will automatically prompt you for your iRacing credentials (Username, Password, Client ID, and Client Secret), and then create the encrypted file for you.
+
+To generate the credentials file without fetching any data, use the `-a` (auth and stop) flag. You must still provide a valid API endpoint like `/data/doc` as the final argument.
+
+```sh
+# This will prompt for credentials and save them to ~/my.creds, then exit.
+irfetch -a ~/my.key ~/my.creds /data/doc
+```
+
+After the `my.creds` file is created, your application can use `api.AuthWithCredsFromFile("~/my.key", "~/my.creds")` to authenticate without needing any interactive prompts.
+
 #### Save and Load Credentials
 Use the key file to save your credentials once. The helper `CredsFromTerminal` will prompt you for your Username, Password, Client ID, and Client Secret.
 
