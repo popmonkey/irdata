@@ -1,5 +1,8 @@
 # irdata
 
+[![CI](https://github.com/popmonkey/irdata/actions/workflows/ci.yml/badge.svg)](https://github.com/popmonkey/irdata/actions/workflows/ci.yml)
+[![Integration Tests](https://github.com/popmonkey/irdata/actions/workflows/integration.yml/badge.svg)](https://github.com/popmonkey/irdata/actions/workflows/integration.yml)
+
 A Go module for simplified access to the iRacing `/data` API.
 
 ## Features
