@@ -71,6 +71,14 @@ func TestMaskSecret(t *testing.T) {
 	assert.Equal(t, encodedPasswordExpected, maskedPasswordActual)
 }
 
+func TestIsMasked(t *testing.T) {
+	maskedPassword, err := maskSecret(string(testPassword), string(testUsername))
+	assert.NoError(t, err)
+
+	assert.True(t, isMasked(maskedPassword))
+	assert.False(t, isMasked(string(testPassword)))
+}
+
 func TestShredKey(t *testing.T) {
 	expectedKey := []byte{0, 1, 2, 3, 4, 5, 6, 7}
 

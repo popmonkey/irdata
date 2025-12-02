@@ -65,10 +65,15 @@ func (i *Irdata) AuthWithProvideCreds(authSource CredsProvider) error {
 	authData.ClientID = string(clientID)
 	authData.ClientSecret = string(clientSecret)
 
-	// Mask the password immediately for storage/usage
-	authData.MaskedPassword, err = maskSecret(string(password), string(username))
-	if err != nil {
-		return err
+	// Mask the password if it is not already masked
+	pass := string(password)
+	if isMasked(pass) {
+		authData.MaskedPassword = pass
+	} else {
+		authData.MaskedPassword, err = maskSecret(pass, string(username))
+		if err != nil {
+			return err
+		}
 	}
 
 	return i.auth(authData)
@@ -95,10 +100,15 @@ func (i *Irdata) AuthAndSaveProvidedCredsToFile(keyFilename string, authFilename
 	authData.ClientID = string(clientID)
 	authData.ClientSecret = string(clientSecret)
 
-	// Mask password
-	authData.MaskedPassword, err = maskSecret(string(password), string(username))
-	if err != nil {
-		return err
+	// Mask the password if it is not already masked
+	pass := string(password)
+	if isMasked(pass) {
+		authData.MaskedPassword = pass
+	} else {
+		authData.MaskedPassword, err = maskSecret(pass, string(username))
+		if err != nil {
+			return err
+		}
 	}
 
 	// Authenticate first to verify creds are good
@@ -357,6 +367,17 @@ func (i *Irdata) refreshToken() error {
 
 	log.Info("Token Refresh Successful")
 	return nil
+}
+
+// isMasked checks if a secret is already masked.
+// It does this by checking if the secret is a valid base64 encoded
+// string that decodes to a sha256 hash.
+func isMasked(secret string) bool {
+	decoded, err := base64.StdEncoding.Strict().DecodeString(secret)
+	if err != nil {
+		return false
+	}
+	return len(decoded) == sha256.Size
 }
 
 // See: https://forums.iracing.com/discussion/22109/login-form-changes/p1
