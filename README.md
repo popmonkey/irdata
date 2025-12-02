@@ -214,6 +214,24 @@ For a response that originally contains a `chunk_info` block, `irdata` adds the 
 
 ---
 
+## S3 Link Callback
+
+Some API endpoints return a link to data stored on S3 instead of the data itself. `irdata` automatically follows these links and returns the data from the S3 bucket.
+
+If you need to know which S3 link is being followed for a given request, you can set a callback function. This is useful for debugging or logging.
+
+```go
+// Set a callback to print any S3 link that is followed.
+api.SetS3LinkCallback(func(link string) {
+    fmt.Printf("Following S3 link: %s\n", link)
+})
+
+// When you make a request that returns an S3 link, the callback will be invoked.
+data, err := api.Get("/data/some_endpoint_with_s3_link")
+```
+
+---
+
 ## Error Handling
 
 ### Rate Limit Management

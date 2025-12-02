@@ -1,0 +1,35 @@
+name: Integration Tests
+
+on:
+  push:
+    paths:
+      - '**.go'
+      - '**.mod'
+  pull_request:
+    paths:
+      - '**.go'
+      - '**.mod'
+  workflow_dispatch:
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+    environment: integration-secure 
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Setup Test Key
+        run: chmod 0400 testdata/test.key
+
+      - name: Run Integration Tests
+        env:
+          IRDATA_TEST_KEY_DATA: ${{ secrets.INTEGRATION_KEY_DATA }}
+          IRDATA_TEST_CREDS_DATA: ${{ secrets.INTEGRATION_CREDS_DATA }}
+        run: go test -tags=integration -v ./...

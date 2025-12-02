@@ -62,6 +62,9 @@ type Irdata struct {
 	ClientID     string
 	ClientSecret string
 
+	// S3 Link callback
+	S3LinkCallback func(link string)
+
 	// Rate limiting fields
 	rateLimitHandler   RateLimitHandler
 	rateLimitMu        sync.Mutex
@@ -166,6 +169,12 @@ func (i *Irdata) SetRetries(retries int) {
 	i.getRetries = retries
 }
 
+// SetS3LinkCallback sets a callback function to be invoked when an S3 link is
+// identified and followed.
+func (i *Irdata) SetS3LinkCallback(callback func(link string)) {
+	i.S3LinkCallback = callback
+}
+
 // Get returns the result value for the uri provided (e.g. "/data/member/info")
 //
 // The value returned is a JSON byte array and a potential error.
@@ -203,6 +212,10 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 	// First, try to unmarshal as an S3 link object
 	var s3Link s3LinkT
 	if json.Unmarshal(data, &s3Link) == nil && s3Link.Link != "" {
+		if i.S3LinkCallback != nil {
+			i.S3LinkCallback(s3Link.Link)
+		}
+
 		log.WithFields(log.Fields{"s3Link.Link": s3Link.Link}).Debug("Following s3link")
 		s3Resp, err := i.retryingGet(s3Link.Link)
 		if err != nil {

@@ -1,8 +1,8 @@
 package irdata
 
 import (
+	"context"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,20 +13,27 @@ const testDataString1 = "IF YOU NO LONGER GO FOR A GAP THAT EXISTS, YOU`RE NO LO
 const testDataString2 = "WE ARE CHECKING"
 const testTtl = time.Duration(1) * time.Hour
 
-var testCacheDir = filepath.Join(os.TempDir(), "irdata-cache")
+func setupCache(t *testing.T) (*Irdata, func()) {
+	t.Helper()
 
-func setupCacheTest() {
-	i.cacheOpen(testCacheDir)
-}
+	cacheDir, err := os.MkdirTemp("", "irdata-cache-test-")
+	assert.NoError(t, err)
 
-func cleanupCacheTest() {
-	i.cacheClose()
-	os.RemoveAll(testCacheDir)
+	i := Open(context.Background())
+	err = i.EnableCache(cacheDir)
+	assert.NoError(t, err)
+
+	cleanup := func() {
+		i.Close()
+		os.RemoveAll(cacheDir)
+	}
+
+	return i, cleanup
 }
 
 func TestSetGet(t *testing.T) {
-	setupCacheTest()
-	t.Cleanup(cleanupCacheTest)
+	i, cleanup := setupCache(t)
+	defer cleanup()
 
 	key := "key"
 
@@ -39,8 +46,8 @@ func TestSetGet(t *testing.T) {
 }
 
 func TestMultipleKVs(t *testing.T) {
-	setupCacheTest()
-	t.Cleanup(cleanupCacheTest)
+	i, cleanup := setupCache(t)
+	defer cleanup()
 
 	key1, key2 := "key1", "key2"
 
@@ -60,8 +67,8 @@ func TestMultipleKVs(t *testing.T) {
 }
 
 func TestSetTtl(t *testing.T) {
-	setupCacheTest()
-	t.Cleanup(cleanupCacheTest)
+	i, cleanup := setupCache(t)
+	defer cleanup()
 
 	key := "key"
 
@@ -76,8 +83,8 @@ func TestSetTtl(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	setupCacheTest()
-	t.Cleanup(cleanupCacheTest)
+	i, cleanup := setupCache(t)
+	defer cleanup()
 
 	key := "key"
 
