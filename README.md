@@ -80,6 +80,8 @@ func main() {
 
 The library uses the **OAuth2 Password Limited Flow**. This requires you to register your "headless" client with iRacing support to obtain a **Client ID** and **Client Secret**, in addition to your standard iRacing username and password.
 
+See: https://oauth.iracing.com/oauth2/book/password_limited_flow.html
+
 > [!IMPORTANT]
 > **Migration Note:** If you used previous versions of `irdata`, your existing `.creds` files are incompatible. You must delete them and regenerate them using the new flow to include your Client ID and Secret.
 
@@ -325,11 +327,13 @@ git clone git@github.com:popmonkey/irdata.git
 Run tests:
 ```sh
 # Run standard tests (no API calls)
-go test
+go test .
 
 # Run integration tests against the live iRacing API
 # Requires valid key and creds files created beforehand
-IRDATA_TEST_KEY=/path/to/key.file \
-IRDATA_TEST_CREDS=/path/to/creds.file \
-go test
+IRDATA_TEST_KEY_FILE=/path/to/key.file \
+IRDATA_TEST_CREDS_FILE=/path/to/creds.file \
+go test -tags=integration -v .
 ```
+
+For CI environments (see `.github/workflows/integration.yml`), you can alternatively provide the base64-encoded content of the key and credentials files using `IRDATA_TEST_KEY_DATA` and `IRDATA_TEST_CREDS_DATA`.
