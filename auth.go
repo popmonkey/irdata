@@ -10,6 +10,7 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -292,9 +293,11 @@ func (i *Irdata) auth(authData authDataT) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
 		log.WithFields(log.Fields{
 			"resp.Status":     resp.Status,
 			"resp.StatusCode": resp.StatusCode,
+			"resp.Body":       string(body),
 		}).Warn("Failed to authenticate")
 
 		return makeErrorf("unexpected auth failure [%v]", resp.Status)

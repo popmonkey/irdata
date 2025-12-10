@@ -206,7 +206,11 @@ func (i *Irdata) Get(uri string) ([]byte, error) {
 
 	// If the response is not 200 OK, it's likely not the JSON we expect.
 	if resp.StatusCode != http.StatusOK {
-		return nil, makeErrorf("received non-200 status code: %d - body: %s", resp.StatusCode, string(data))
+		bodyToLog := data
+		if len(bodyToLog) > 1024 {
+			bodyToLog = bodyToLog[:1024]
+		}
+		return nil, makeErrorf("received non-200 status code: %d - body: %s", resp.StatusCode, string(bodyToLog))
 	}
 
 	// First, try to unmarshal as an S3 link object
