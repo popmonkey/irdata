@@ -19,14 +19,21 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const tokenURL = "https://oauth.iracing.com/oauth2/token"
-const testUrl = "https://members-ng.iracing.com/data/constants/event_types"
+var TokenURL = "https://oauth.iracing.com/oauth2/token"
 
 type authDataT struct {
 	Username       string
 	MaskedPassword string
 	ClientID       string
 	ClientSecret   string
+}
+
+type AuthTokenT struct {
+	AccessToken  string
+	RefreshToken string
+	TokenExpiry  time.Time
+	ClientID     string
+	ClientSecret string
 }
 
 // TokenResponse maps the JSON response from the /token endpoint
@@ -48,7 +55,7 @@ func (i *Irdata) AuthWithCredsFromFile(keyFilename string, authFilename string) 
 		return err
 	}
 
-	return i.auth(authData)
+	return i.auth(authData, keyFilename)
 }
 
 // AuthWithProvideCreds calls the provided function for the credentials
@@ -76,7 +83,7 @@ func (i *Irdata) AuthWithProvideCreds(authSource CredsProvider) error {
 		}
 	}
 
-	return i.auth(authData)
+	return i.auth(authData, "")
 }
 
 // AuthAndSaveProvidedCredsToFile calls the provided function for the
@@ -112,7 +119,7 @@ func (i *Irdata) AuthAndSaveProvidedCredsToFile(keyFilename string, authFilename
 	}
 
 	// Authenticate first to verify creds are good
-	err = i.auth(authData)
+	err = i.auth(authData, keyFilename)
 	if err != nil {
 		return err
 	}
@@ -122,6 +129,63 @@ func (i *Irdata) AuthAndSaveProvidedCredsToFile(keyFilename string, authFilename
 }
 
 func writeCreds(keyFilename string, authFilename string, authData authDataT) error {
+	return encryptToFile(keyFilename, authFilename, authData)
+}
+
+func readCreds(keyFilename string, authFilename string) (authDataT, error) {
+	var authData authDataT
+	err := decryptFromFile(keyFilename, authFilename, &authData)
+	if err != nil {
+		return authData, err
+	}
+
+	// Detect legacy credentials (missing ClientID or Secret)
+	// Because gob ignores unknown fields, decoding an old file into the new struct
+	// will leave these fields empty.
+	if authData.ClientID == "" || authData.ClientSecret == "" {
+		return authData, makeErrorf("credentials file '%s' is in a legacy format (missing Client ID/Secret). Please delete it and re-authenticate.", authFilename)
+	}
+
+	return authData, nil
+}
+
+func (i *Irdata) writeAuthToken(keyFilename string) error {
+	if i.authTokenFile == "" || keyFilename == "" {
+		return nil // Not configured to save auth token
+	}
+
+	token := AuthTokenT{
+		AccessToken:  i.AccessToken,
+		RefreshToken: i.RefreshToken,
+		TokenExpiry:  i.TokenExpiry,
+		ClientID:     i.ClientID,
+		ClientSecret: i.ClientSecret,
+	}
+
+	return encryptToFile(keyFilename, i.authTokenFile, token)
+}
+
+func (i *Irdata) readAuthToken(keyFilename string) error {
+	if i.authTokenFile == "" || keyFilename == "" {
+		return makeErrorf("no auth token file configured or no key provided")
+	}
+
+	var token AuthTokenT
+	err := decryptFromFile(keyFilename, i.authTokenFile, &token)
+	if err != nil {
+		return err
+	}
+
+	i.AccessToken = token.AccessToken
+	i.RefreshToken = token.RefreshToken
+	i.TokenExpiry = token.TokenExpiry
+	i.ClientID = token.ClientID
+	i.ClientSecret = token.ClientSecret
+
+	return nil
+}
+
+func encryptToFile(keyFilename string, filename string, payload interface{}) error {
 	key, err := getKey(keyFilename)
 	if err != nil {
 		return err
@@ -154,28 +218,26 @@ func writeCreds(keyFilename string, authFilename string, authData authDataT) err
 
 	enc := gob.NewEncoder(&buf)
 
-	err = enc.Encode(authData)
+	err = enc.Encode(payload)
 	if err != nil {
-		return makeErrorf("uanble to gob encode auth data %v", err)
+		return makeErrorf("unable to gob encode payload %v", err)
 	}
 
 	data := aesgcm.Seal(nonce, nonce, buf.Bytes(), additionalContext)
 
 	base64data := base64.StdEncoding.Strict().EncodeToString(data)
 
-	if err := os.WriteFile(authFilename, []byte(base64data), os.ModePerm); err != nil {
-		return makeErrorf("unable to write %s [%v]", authFilename, err)
+	if err := os.WriteFile(filename, []byte(base64data), os.ModePerm); err != nil {
+		return makeErrorf("unable to write %s [%v]", filename, err)
 	}
 
 	return nil
 }
 
-func readCreds(keyFilename string, authFilename string) (authDataT, error) {
-	var authData authDataT
-
+func decryptFromFile(keyFilename string, filename string, payload interface{}) error {
 	key, err := getKey(keyFilename)
 	if err != nil {
-		return authData, err
+		return err
 	}
 
 	block, err := aes.NewCipher(key)
@@ -185,56 +247,77 @@ func readCreds(keyFilename string, authFilename string) (authDataT, error) {
 
 	if err != nil {
 		if errors.Is(err, aes.KeySizeError(0)) {
-			return authData, makeErrorf("key must be 16, 24, or 32 bytes long")
+			return makeErrorf("key must be 16, 24, or 32 bytes long")
 		} else {
-			return authData, makeErrorf("unable to intialize AES cipher [%v]", err)
+			return makeErrorf("unable to intialize AES cipher [%v]", err)
 		}
 	}
 
 	aesgcm, err := cipher.NewGCM(block)
 
 	if err != nil {
-		return authData, makeErrorf("unable to initialice GCM [%v]", err)
+		return makeErrorf("unable to initialice GCM [%v]", err)
 	}
 
-	base64data, err := os.ReadFile(authFilename)
+	base64data, err := os.ReadFile(filename)
 	if err != nil {
-		return authData, makeErrorf("unable to read file %s [%v]", authFilename, err)
+		return err // Return original error for file not found etc.
 	}
 
 	data, err := base64.StdEncoding.Strict().DecodeString(string(base64data))
 	if err != nil {
-		return authData, makeErrorf("unable to decode base64 creds [%v]", err)
+		return makeErrorf("unable to decode base64 file [%v]", err)
 	}
 
-	authGob, err := aesgcm.Open(nil, data[:aesgcm.NonceSize()], data[aesgcm.NonceSize():], additionalContext)
+	if len(data) < aesgcm.NonceSize() {
+		return makeErrorf("malformed ciphertext")
+	}
+
+	decryptedGob, err := aesgcm.Open(nil, data[:aesgcm.NonceSize()], data[aesgcm.NonceSize():], additionalContext)
 	if err != nil {
-		return authData, makeErrorf("unable to open aesgcm [%v]", err)
+		return makeErrorf("unable to open aesgcm [%v]", err)
 	}
 
-	buf := bytes.NewReader(authGob)
+	buf := bytes.NewReader(decryptedGob)
 
 	dec := gob.NewDecoder(buf)
 
-	err = dec.Decode(&authData)
+	err = dec.Decode(payload)
 	if err != nil {
-		return authData, makeErrorf("unable to gob decode [%v]", err)
+		return makeErrorf("unable to gob decode [%v]", err)
 	}
 
-	// Detect legacy credentials (missing ClientID or Secret)
-	// Because gob ignores unknown fields, decoding an old file into the new struct
-	// will leave these fields empty.
-	if authData.ClientID == "" || authData.ClientSecret == "" {
-		return authData, makeErrorf("credentials file '%s' is in a legacy format (missing Client ID/Secret). Please delete it and re-authenticate.", authFilename)
-	}
-
-	return authData, nil
+	return nil
 }
 
 // auth client using Password Limited Flow
-func (i *Irdata) auth(authData authDataT) error {
+func (i *Irdata) auth(authData authDataT, keyFilename string) error {
 	if i.isAuthed {
 		return nil
+	}
+
+	// Try loading from token file if available and configured
+	if i.authTokenFile != "" && keyFilename != "" {
+		if err := i.readAuthToken(keyFilename); err == nil {
+			log.Info("Loaded auth token from file")
+			// Validate/Refresh
+			if i.TokenExpiry.Before(time.Now()) {
+				log.Info("Loaded token is expired, refreshing")
+				if err := i.refreshToken(); err == nil {
+					i.isAuthed = true
+					log.Debug("Refreshing token successful, writing new token to file.")
+					_ = i.writeAuthToken(keyFilename) // Ignore error on write, token is already valid in memory
+					return nil
+				} else {
+					log.Warn("Failed to refresh loaded token, falling back to password auth", err)
+				}
+			} else {
+				i.isAuthed = true
+				return nil
+			}
+		} else {
+			log.WithField("err", err).Debug("Failed to load auth token, proceeding with password auth")
+		}
 	}
 
 	if authData.MaskedPassword == "" || authData.ClientID == "" || authData.ClientSecret == "" {
@@ -267,7 +350,7 @@ func (i *Irdata) auth(authData authDataT) error {
 	var resp *http.Response
 
 	for retries > 0 {
-		resp, err = i.httpClient.PostForm(tokenURL, formData)
+		resp, err = i.httpClient.PostForm(TokenURL, formData)
 
 		// 429 Too Many Requests or 5xx Server Errors -> Retry
 		// 400/401 -> Do not retry, usually config error
@@ -314,6 +397,12 @@ func (i *Irdata) auth(authData authDataT) error {
 	i.TokenExpiry = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
 	i.isAuthed = true
 
+	// If auth was successful and authTokenFile is configured, write the new token
+	if i.authTokenFile != "" && keyFilename != "" {
+		log.Debug("Initial auth successful, writing token to file.")
+		_ = i.writeAuthToken(keyFilename) // Ignore error on write, auth is already successful
+	}
+
 	return nil
 }
 
@@ -338,7 +427,7 @@ func (i *Irdata) refreshToken() error {
 	formData.Set("client_secret", maskedClientSecret)
 	formData.Set("refresh_token", i.RefreshToken)
 
-	resp, err := i.httpClient.PostForm(tokenURL, formData)
+	resp, err := i.httpClient.PostForm(TokenURL, formData)
 	if err != nil {
 		return makeErrorf("refresh request failed: %v", err)
 	}

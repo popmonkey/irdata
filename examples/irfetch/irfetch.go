@@ -21,6 +21,7 @@ var (
 	cacheDuration time.Duration
 	logDebug      bool
 	authAndStop   bool
+	authTokenFile string
 )
 
 func init() {
@@ -32,6 +33,7 @@ func init() {
 	flag.DurationVar(&cacheDuration, "cachettl", time.Duration(15)*time.Minute, "cache TTL for this call")
 	flag.BoolVar(&logDebug, "v", false, "log verbosely")
 	flag.BoolVar(&authAndStop, "a", false, "just run auth and stop (will generate creds file)")
+	flag.StringVar(&authTokenFile, "authtoken", "", "path to file to store/load auth token")
 }
 
 func main() {
@@ -65,9 +67,8 @@ same URI will return data from this cache until it is expired.  See --help.
 (%[1]s is built in Go using the irdata library at https://github.com/popmonkey/irdata)
 
 Example:
-%[1]s ~/my.key -c -cachettl 60m ~/ir.creds /data/member/info
-
-
+%[1]s -c -cachettl 60m ~/my.key ~/ir.creds /data/member/info
+%[1]s --authtoken ~/.irdata_token ~/my.key ~/ir.creds /data/member/info
 
 `, toolName)
 		flag.Usage()
@@ -93,6 +94,10 @@ Example:
 
 	if useCache {
 		api.EnableCache(cacheDir)
+	}
+
+	if authTokenFile != "" {
+		api.SetAuthTokenFile(authTokenFile)
 	}
 
 	if _, err := os.Stat(credsFn); err != nil {

@@ -70,6 +70,9 @@ type Irdata struct {
 	rateLimitMu        sync.Mutex
 	rateLimitRemaining int
 	rateLimitReset     time.Time
+
+	// Auth Persistence
+	authTokenFile string
 }
 
 type LogLevel int8
@@ -173,6 +176,12 @@ func (i *Irdata) SetRetries(retries int) {
 // identified and followed.
 func (i *Irdata) SetS3LinkCallback(callback func(link string)) {
 	i.S3LinkCallback = callback
+}
+
+// SetAuthTokenFile sets the filename where the authentication token will be
+// persisted.  The token is encrypted using the same key as the credentials file.
+func (i *Irdata) SetAuthTokenFile(filename string) {
+	i.authTokenFile = filename
 }
 
 // Get returns the result value for the uri provided (e.g. "/data/member/info")
