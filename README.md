@@ -137,6 +137,21 @@ if err != nil {
 }
 ```
 
+### Auth Token Persistence (Optional)
+
+To reduce the number of full login requests, you can persist the OAuth2 token to a file. The library will attempt to reuse or refresh this token before falling back to full credentials authentication.
+
+The token file is encrypted using the **same key file** as your credentials, so this feature works in tandem with `AuthWithCredsFromFile`.
+
+```go
+// Configure the persistence file
+api.SetAuthTokenFile("my.token")
+
+// Authenticate using the encrypted credentials.
+// The library will check "my.token" first.
+err := api.AuthWithCredsFromFile("my.key", "my.creds")
+```
+
 ### Programmatic Credentials
 
 You can provide credentials directly in your code by implementing the `CredsProvider` interface.
