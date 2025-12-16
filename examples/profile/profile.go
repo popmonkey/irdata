@@ -82,6 +82,26 @@ func main() {
 		log.Panic(err)
 	}
 
+	// now some career stats
+	var stats struct {
+		Stats []struct {
+			Category string `json:"category"`
+			Starts   int64  `json:"starts"`
+			Wins     int64  `json:"wins"`
+			Laps     int64  `json:"laps"`
+		} `json:"stats"`
+		CustID int64 `json:"cust_id"`
+	}
+
+	data, err = i.GetWithCache("/data/stats/member_career", time.Duration(15)*time.Minute)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	if err := json.Unmarshal(data, &stats); err != nil {
+		log.Panic(err)
+	}
+
 	// now we'll get the most recent 90 days of sessions for this same user
 	startTime := time.Now().UTC().Add(time.Duration(-(90 * 24)) * time.Hour).Format("2006-01-02T15:04Z")
 	var uri = fmt.Sprintf("/data/results/search_series?cust_id=%d&start_range_begin=%s", member.CustID, startTime)
@@ -122,6 +142,12 @@ func main() {
 			license.SR,
 			license.CPI,
 		)
+	}
+
+	fmt.Print("\n\nCareer Stats:\n")
+
+	for _, stat := range stats.Stats {
+		fmt.Printf("\t%s: %d starts, %d wins, %d laps\n", stat.Category, stat.Starts, stat.Wins, stat.Laps)
 	}
 
 	fmt.Printf("\n--- Sessions since %s ---\n\n", startTime)

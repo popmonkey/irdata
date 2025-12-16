@@ -2,6 +2,7 @@ package irdata
 
 import (
 	"bytes"
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/base64"
@@ -202,7 +203,7 @@ func TestAuthTokenFile(t *testing.T) {
 	setupAuthTest()
 	t.Cleanup(cleanupAuthTest)
 
-	api := Open(nil)
+	api := Open(context.TODO())
 	defer api.Close()
 
 	// 1. Authenticate and ensure a token is saved
@@ -242,7 +243,7 @@ func TestAuthTokenFile(t *testing.T) {
 	assert.NoError(t, err)
 
 	// 2. Create a new API instance and load from token file
-	api2 := Open(nil)
+	api2 := Open(context.TODO())
 	defer api2.Close()
 	api2.SetAuthTokenFile(authTokenFn)
 
@@ -274,7 +275,7 @@ func TestAuthTokenFile(t *testing.T) {
 	assert.Equal(t, "new_refresh", updatedToken.RefreshToken)
 
 	// 3. Test with no key provided (should not honor authTokenFile)
-	api3 := Open(nil)
+	api3 := Open(context.TODO())
 	defer api3.Close()
 	api3.SetAuthTokenFile(authTokenFn) // Set authTokenFile but no key
 
@@ -286,7 +287,7 @@ func TestAuthTokenFile(t *testing.T) {
 	assert.False(t, api3.isAuthed)
 
 	// 4. Test Token Expired AND Refresh Failed -> Fallback to Password Auth
-	api4 := Open(nil)
+	api4 := Open(context.TODO())
 	defer api4.Close()
 	api4.SetAuthTokenFile(authTokenFn)
 
