@@ -5,7 +5,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -177,12 +176,14 @@ Example:
 	if _, err := os.Stat(credsFn); err != nil {
 		err = api.AuthAndSaveProvidedCredsToFile(keyFn, credsFn, irdata.CredsFromTerminal{})
 		if err != nil {
-			log.Panic(err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
 		}
 	} else {
 		err = api.AuthWithCredsFromFile(keyFn, credsFn)
 		if err != nil {
-			log.Panic(err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
 		}
 	}
 
@@ -198,19 +199,22 @@ Example:
 		data, err = api.Get(apiUri)
 	}
 	if err != nil {
-		log.Panic(err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 
 	writer := bufio.NewWriter(os.Stdout)
 
 	_, err = writer.Write(data)
 	if err != nil {
-		log.Panic(err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 
 	err = writer.Flush()
 	if err != nil {
-		log.Panic(err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 
 	fmt.Println()
