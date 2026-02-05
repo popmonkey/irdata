@@ -17,11 +17,19 @@ type hashedKey []byte
 func (i *Irdata) cacheOpen(cacheDir string) error {
 	var err error
 
-	i.cask, err = bitcask.Open(
-		cacheDir,
+	options := []bitcask.Option{
 		bitcask.WithMaxValueSize(_maxValueSize),
 		bitcask.WithMaxKeySize(_maxKeySize),
 		bitcask.WithSync(true),
+	}
+
+	if i.cacheMaxDatafileSize > 0 {
+		options = append(options, bitcask.WithMaxDatafileSize(i.cacheMaxDatafileSize))
+	}
+
+	i.cask, err = bitcask.Open(
+		cacheDir,
+		options...,
 	)
 
 	return err
@@ -46,6 +54,11 @@ func (i *Irdata) cacheClose() {
 	}
 
 	log.Info("Done")
+}
+
+func (i *Irdata) cacheCloseFast() {
+	log.Info("Closing cache (fast)")
+	i.cask.Close()
 }
 
 func hashKey(key string) hashedKey {

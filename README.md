@@ -216,12 +216,33 @@ if err != nil {
 }
 ```
 
+You can optionally configure the cache block size (the maximum size of each individual data file in the cache) before enabling it. This does not limit the overall size of the cache. The default is 1MB.
+```go
+// Set individual cache data file size to 10MB
+api.SetCacheMaxDatafileSize(10 * 1024 * 1024)
+api.EnableCache(".cache")
+```
+
 Then use `GetWithCache()` which first checks the cache for the requested data. On a cache hit, it returns the cached data immediately. On a cache miss, it calls the main API, returns the result, and populates the cache with the new data for the specified time-to-live (TTL) duration.
 
 ```go
 // This call will hit the iRacing API only if the data is not in the cache
 // or if the cached data is older than 15 minutes.
 data, err := api.GetWithCache("/data/member/info", 15*time.Minute)
+```
+
+#### Closing the Cache
+
+When you are finished, you should call `Close()` to ensure the cache is properly compacted and closed.
+
+```go
+defer api.Close()
+```
+
+If you need to close the application quickly and do not want to wait for the cache to merge/compact, you can use `CloseFast()`.
+
+```go
+defer api.CloseFast()
 ```
 
 ---

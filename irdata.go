@@ -55,6 +55,8 @@ type Irdata struct {
 	cask       *bitcask.Bitcask
 	getRetries int
 
+	cacheMaxDatafileSize int
+
 	// Auth Data used for Refreshing
 	AccessToken  string
 	RefreshToken string
@@ -121,11 +123,12 @@ func Open(ctx context.Context) *Irdata {
 	}
 
 	return &Irdata{
-		httpClient:       client,
-		isAuthed:         false,
-		cask:             nil,
-		getRetries:       0,
-		rateLimitHandler: RateLimitError, // Default to erroring out
+		httpClient:           client,
+		isAuthed:             false,
+		cask:                 nil,
+		getRetries:           0,
+		rateLimitHandler:     RateLimitError, // Default to erroring out
+		cacheMaxDatafileSize: 1024 * 1024,
 	}
 }
 
@@ -137,11 +140,25 @@ func (i *Irdata) Close() {
 	}
 }
 
+// CloseFast
+// Calling CloseFast when done will close the cache WITHOUT compacting/merging it.
+func (i *Irdata) CloseFast() {
+	if i.cask != nil {
+		i.cacheCloseFast()
+	}
+}
+
 // EnableCache enables on the optional caching layer which will
 // use the directory path provided as cacheDir
 func (i *Irdata) EnableCache(cacheDir string) error {
 	log.WithFields(log.Fields{"cacheDir": cacheDir}).Debug("Enabling cache")
 	return i.cacheOpen(cacheDir)
+}
+
+// SetCacheMaxDatafileSize sets the maximum size of a single datafile in the cache (in bytes).
+// This must be called before EnableCache.
+func (i *Irdata) SetCacheMaxDatafileSize(size int) {
+	i.cacheMaxDatafileSize = size
 }
 
 // SetLogLevel sets the loging level using the logrus module
