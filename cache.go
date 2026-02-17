@@ -48,9 +48,24 @@ func (i *Irdata) cacheClose() {
 
 	log.Debug("Merging cache")
 
-	err = i.cask.Merge()
-	if err != nil {
+	// Merge is compaction.  If it hits an expired key, it may return ErrKeyExpired.
+	// Since we run GC right before this, it's usually transient or due to keys
+	// expiring during the merge itself.  We retry up to 3 times to ensure compaction
+	// completes as it is a critical maintenance task.
+	for attempts := 1; attempts <= 3; attempts++ {
+		err = i.cask.Merge()
+		if err == nil {
+			break
+		}
+
+		if errors.Is(err, bitcask.ErrKeyExpired) {
+			log.WithField("attempt", attempts).Debug("cask.Merge hit expired keys, retrying...")
+			_ = i.cask.RunGC()
+			continue
+		}
+
 		log.WithField("err", err).Warn("cask.Merge failed")
+		break
 	}
 
 	log.Info("Done")
