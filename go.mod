@@ -4,8 +4,8 @@ go 1.24.13
 
 require (
 	git.mills.io/prologic/bitcask v1.0.2
-	github.com/sirupsen/logrus v1.9.3
-	github.com/stretchr/testify v1.9.0
+	github.com/sirupsen/logrus v1.9.4
+	github.com/stretchr/testify v1.10.0
 	golang.org/x/term v0.21.0
 	gopkg.in/yaml.v3 v3.0.1
 )
