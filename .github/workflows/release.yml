@@ -18,7 +18,8 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.13'
+          go-version-file: 'go.mod'
+          check-latest: true
 
       - name: Ensure build directory exists
         run: mkdir -p build
