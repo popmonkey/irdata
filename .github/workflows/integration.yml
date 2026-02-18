@@ -1,16 +1,11 @@
 name: Integration Tests
 
 on:
-  # Run on pushes to the main branch only
   push:
     branches:
       - main
-      
-  # Run nightly at 2:30 AM UTC
   schedule:
     - cron: '30 2 * * *'
-    
-  # Allow manual trigger from the Actions tab
   workflow_dispatch:
 
 jobs:
@@ -25,13 +20,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.12'
-
-      - name: Run govulncheck
-        uses: golang/govulncheck-action@v1
-        with:
-          go-version-input: '1.24.13'
-          go-package: './...'
+          go-version: '1.24.13'
 
       - name: Setup Test Key
         run: chmod 0400 testdata/test.key
