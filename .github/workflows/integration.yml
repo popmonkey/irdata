@@ -30,7 +30,7 @@ jobs:
       - name: Run govulncheck
         uses: golang/govulncheck-action@v1
         with:
-          go-version-input: '1.24.12'
+          go-version-input: '1.24.13'
           go-package: './...'
 
       - name: Setup Test Key
