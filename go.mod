@@ -1,6 +1,6 @@
 module github.com/popmonkey/irdata
 
-go 1.25.0
+go 1.25.9
 
 require (
 	git.mills.io/prologic/bitcask v1.0.2
