@@ -19,7 +19,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
-          check-latest: true
           
       - name: Run Tests
         run: chmod 0400 testdata/test.key && 
