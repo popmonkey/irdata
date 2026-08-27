@@ -5,7 +5,6 @@ go 1.25.9
 require (
 	git.mills.io/prologic/bitcask v1.0.2
 	github.com/sirupsen/logrus v1.10.1
-	github.com/sirupsen/logrus v1.10.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/term v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
