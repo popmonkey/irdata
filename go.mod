@@ -1,12 +1,12 @@
 module github.com/popmonkey/irdata
 
-go 1.25.9
+go 1.26.0
 
 require (
 	git.mills.io/prologic/bitcask v1.0.2
 	github.com/sirupsen/logrus v1.10.2
 	github.com/stretchr/testify v1.12.1
-	golang.org/x/term v0.45.0
+	golang.org/x/term v0.46.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -17,5 +17,5 @@ require (
 	github.com/plar/go-adaptive-radix-tree v1.0.5 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20240604190554-fc45aab8b7f8 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 )
